@@ -1,61 +1,60 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, X, Check, AlertCircle } from 'lucide-react';
-import InteractiveModel from './InteractiveModel';
-const INSPECTION_POINTS = [
-  { id: 'front', name: 'Avant', angle: 0 },
-  { id: 'front-left', name: 'Avant Gauche', angle: 45 },
-  { id: 'left', name: 'Gauche', angle: 90 },
-  { id: 'rear-left', name: 'Arrière Gauche', angle: 135 },
-  { id: 'rear', name: 'Arrière', angle: 180 },
-  { id: 'rear-right', name: 'Arrière Droit', angle: 225 },
-  { id: 'right', name: 'Droit', angle: 270 },
-  { id: 'front-right', name: 'Avant Droit', angle: 315 }
-];
+import { 
+  Camera, 
+  X, 
+  Check, 
+  AlertCircle, 
+  ChevronRight, 
+  Info, 
+  Layers, 
+  Zap, 
+  Maximize2,
+  RefreshCw,
+  Compass
+} from 'lucide-react';
+import { validateCapture } from '../services/gemini';
 
-const VehicleGuide = ({ vehicleType, currentPoint }) => {
-  // Map INSPECTION_POINTS ids to InteractiveModel part ids
-  const partMap = {
-    'front': 'front',
-    'front-left': 'left',
-    'left': 'left',
-    'rear-left': 'left',
-    'rear': 'rear',
-    'rear-right': 'right',
-    'right': 'right',
-    'front-right': 'right'
-  };
-
-  const viewMap = {
-    'front': 'front',
-    'front-left': 'front',
-    'left': 'front',
-    'rear-left': 'rear',
-    'rear': 'rear',
-    'rear-right': 'rear',
-    'right': 'rear',
-    'front-right': 'front'
-  };
-
-  return (
-    <div className="absolute bottom-24 right-4 w-32 h-32 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 p-2 z-20 pointer-events-none">
-      <InteractiveModel 
-        vehicleType={vehicleType}
-        view={viewMap[currentPoint.id] || 'front'}
-        hoveredPart={partMap[currentPoint.id]}
-        damages={[{ partId: partMap[currentPoint.id], severity: 3 }]} // Highlight target zone
-      />
-      <div className="absolute -top-8 left-0 right-0 text-center">
-        <span className="text-[10px] font-bold text-white uppercase tracking-widest bg-primary-600 px-2 py-0.5 rounded-full shadow-lg">
-          Cible: {currentPoint.name}
-        </span>
-      </div>
-    </div>
-  );
+const GUIDES = {
+  voiture: [
+    { id: 'front', name: 'Avant', instruction: 'Face avant complète' },
+    { id: 'front-left', name: 'Avant Gauche', instruction: 'Angle 45° conducteur' },
+    { id: 'left', name: 'Côté Gauche', instruction: 'Profil complet gauche' },
+    { id: 'rear-left', name: 'Arrière Gauche', instruction: 'Angle 45° coffre conducteur' },
+    { id: 'rear', name: 'Arrière', instruction: 'Face arrière complète' },
+    { id: 'rear-right', name: 'Arrière Droit', instruction: 'Angle 45° coffre passager' },
+    { id: 'right', name: 'Côté Droit', instruction: 'Profil complet droit' },
+    { id: 'front-right', name: 'Avant Droit', instruction: 'Angle 45° avant passager' }
+  ],
+  moto: [
+    { id: 'front', name: 'Avant', instruction: 'Face avant et optique' },
+    { id: 'left', name: 'Côté Gauche', instruction: 'Transmission et flanc gauche' },
+    { id: 'rear', name: 'Arrière', instruction: 'Plaque et feu arrière' },
+    { id: 'right', name: 'Côté Droit', instruction: 'Échappement et flanc droit' },
+    { id: 'dashboard', name: 'Tableau de bord', instruction: 'Compteur et guidon' }
+  ],
+  camion: [
+    { id: 'front', name: 'Cabine', instruction: 'Face avant calandre' },
+    { id: 'left-cab', name: 'Cabine Gauche', instruction: 'Portière et accès' },
+    { id: 'left-body', name: 'Côté Gauche', instruction: 'Châssis et remorque' },
+    { id: 'rear', name: 'Arrière', instruction: 'Pont et portes' },
+    { id: 'right-body', name: 'Côté Droit', instruction: 'Châssis et remorque' },
+    { id: 'right-cab', name: 'Cabine Droite', instruction: 'Portière passager' }
+  ],
+  btp: [
+    { id: 'front', name: 'Outil', instruction: 'Outil/Godet avant' },
+    { id: 'cab', name: 'Commandes', instruction: 'Poste de conduite' },
+    { id: 'engine', name: 'Moteur', instruction: 'Capotage et arrière' },
+    { id: 'hydraulics-l', name: 'Hydraulique G', instruction: 'Vérins gauches' },
+    { id: 'hydraulics-r', name: 'Hydraulique D', instruction: 'Vérins droits' }
+  ],
+  plaque: [
+    { id: 'plate', name: 'Plaque d\'Immatriculation', instruction: 'Cadrez la plaque de face, bien centrée' }
+  ]
 };
 
 const CameraCapture = ({ 
-  vehicleType = 'citadine', 
+  vehicleType = 'voiture', 
   onCapture, 
   onClose,
   capturedImages = [] 
@@ -64,268 +63,227 @@ const CameraCapture = ({
   const canvasRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [currentPointIndex, setCurrentPointIndex] = useState(0);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [error, setError] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [validationError, setValidationError] = useState(null);
+  const [orientation, setOrientation] = useState({ alpha: 0, beta: 0, gamma: 0 });
+  const [flashOn, setFlashOn] = useState(false);
   
-  const currentPoint = INSPECTION_POINTS[currentPointIndex];
-  
-  const startCamera = useCallback(async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        }
+  const category = GUIDES[vehicleType] ? vehicleType : 'voiture';
+  const points = GUIDES[category];
+  const currentPoint = points[currentPointIndex];
+
+  // Gyroscope tracking for Level
+  useEffect(() => {
+    const handleOrientation = (e) => {
+      setOrientation({
+        alpha: Math.round(e.alpha || 0),
+        beta: Math.round(e.beta || 0),
+        gamma: Math.round(e.gamma || 0)
       });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        setStream(mediaStream);
-      }
-    } catch (err) {
-      setError('Impossible d\'accéder à la caméra. Veuillez vérifier les permissions.');
-      console.error('Camera error:', err);
+    };
+
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener('deviceorientation', handleOrientation);
     }
+    return () => window.removeEventListener('deviceorientation', handleOrientation);
   }, []);
-  
+
   const stopCamera = useCallback(() => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
   }, [stream]);
-  
-  const capturePhoto = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
-    
-    setIsCapturing(true);
-    
+
+  const startCamera = useCallback(async () => {
+    try {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+
+      const constraints = {
+        video: { 
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        }
+      };
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current.play().catch(e => console.error("Play error:", e));
+        };
+        setStream(mediaStream);
+      }
+    } catch (err) {
+      console.error('Camera error:', err);
+      // Fallback to any camera if environment ideal fails
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallbackStream;
+          videoRef.current.play().catch(e => console.error("Fallback play error:", e));
+          setStream(fallbackStream);
+        }
+      } catch (innerErr) {
+        setValidationError("Impossible d'accéder à la caméra.");
+      }
+    }
+  }, [stream]);
+
+  useEffect(() => {
+    startCamera();
+    return () => {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    };
+  }, []); // Only on mount
+
+
+  const allPointsCaptured = capturedImages.length >= points.length;
+  const currentCapture = capturedImages.find(img => img.id === currentPoint.id);
+  const [isValidated, setIsValidated] = useState(false);
+
+  useEffect(() => {
+    setIsValidated(false);
+  }, [currentPointIndex]);
+
+  const capturePhoto = async () => {
+    if (!videoRef.current || isProcessing) return;
+    setIsProcessing(true);
+    setValidationError(null);
+
     try {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      
-      // Set canvas dimensions to match video
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      
-      // Draw current frame to canvas
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      // Get image data and compress
+      canvas.getContext('2d').drawImage(video, 0, 0);
       const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+      const result = await validateCapture(imageData, currentPoint.name, vehicleType);
       
-      // Create compressed version for upload
-      const compressedCanvas = document.createElement('canvas');
-      const compressedContext = compressedCanvas.getContext('2d');
-      const maxWidth = 1024;
-      const maxHeight = 768;
-      
-      let width = canvas.width;
-      let height = canvas.height;
-      
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width *= ratio;
-        height *= ratio;
-      }
-      
-      compressedCanvas.width = width;
-      compressedCanvas.height = height;
-      compressedContext.drawImage(canvas, 0, 0, width, height);
-      
-      const compressedImage = compressedCanvas.toDataURL('image/jpeg', 0.7);
-      
-      // Flash effect
-      const flash = document.createElement('div');
-      flash.className = 'fixed inset-0 bg-white z-50 pointer-events-none';
-      document.body.appendChild(flash);
-      setTimeout(() => flash.remove(), 200);
-      
-      // Haptic feedback if available
-      if ('vibrate' in navigator) {
-        navigator.vibrate(200);
-      }
-      
-      const photoData = {
-        id: currentPoint.id,
-        name: currentPoint.name,
-        image: compressedImage,
-        timestamp: new Date().toISOString(),
-        coordinates: await getCurrentPosition()
-      };
-      
-      onCapture(photoData);
-      
-      // Move to next point
-      if (currentPointIndex < INSPECTION_POINTS.length - 1) {
-        setCurrentPointIndex(prev => prev + 1);
-      }
-      
-    } catch (err) {
-      setError('Erreur lors de la capture de la photo.');
-      console.error('Capture error:', err);
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [currentPoint, currentPointIndex, onCapture]);
-  
-  const getCurrentPosition = () => {
-    return new Promise((resolve) => {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            resolve({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy: position.coords.accuracy
-            });
-          },
-          () => resolve(null)
-        );
+      if (result.valid) {
+        onCapture({
+          id: currentPoint.id,
+          name: currentPoint.name,
+          image: imageData,
+          timestamp: new Date().toISOString()
+        });
+        setIsValidated(true);
+        
+        // Final action for single mode
+        if (points.length === 1) {
+           setTimeout(() => onClose(), 500); 
+        }
       } else {
-        resolve(null);
+        setValidationError(result.reason + ": " + (result.instruction || "Recommencez."));
       }
-    });
+    } catch (err) {
+      setValidationError("Erreur IA.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
-  
-  const isPointCaptured = (pointId) => {
-    return capturedImages.some(img => img.id === pointId);
-  };
-  
-  React.useEffect(() => {
-    startCamera();
-    return () => stopCamera();
-  }, [startCamera, stopCamera]);
-  
-  const allPointsCaptured = capturedImages.length === INSPECTION_POINTS.length;
-  
+
   return (
-    <div className="fixed inset-0 bg-black z-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-gray-900 text-white p-4 flex justify-between items-center">
-        <div>
-          <h2 className="text-lg font-semibold">Inspection Véhicule</h2>
-          <p className="text-sm text-gray-400">
-            Point {currentPointIndex + 1}/{INSPECTION_POINTS.length}: {currentPoint.name}
-          </p>
+    <div className="fixed inset-0 bg-black z-[100] h-[100dvh] w-screen text-white font-sans overflow-hidden flex flex-col">
+      
+      {/* 1. Viewfinder (Deep Background) */}
+      <div className="absolute inset-0 z-0">
+        <video 
+          ref={videoRef} 
+          autoPlay 
+          playsInline 
+          muted 
+          className="w-full h-full object-cover" 
+        />
+        <div className="absolute inset-x-[10%] inset-y-[20%] border border-white/10 rounded-[2rem] pointer-events-none" />
+      </div>
+
+      {/* 2. Top Banner (Status & Step) */}
+      <div className="relative z-20 bg-black/80 backdrop-blur-md p-4 flex justify-between items-center border-b border-white/10">
+        <div className="flex flex-col">
+          <span className="text-[10px] font-black uppercase tracking-widest text-primary-500">Banc d'Expertise v3</span>
+          <h2 className="text-sm font-bold truncate">Étape {currentPointIndex + 1}/{points.length} : {currentPoint.name}</h2>
         </div>
-        <button
-          onClick={onClose}
-          className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-        >
-          <X size={24} />
+        <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+          <X size={20} />
         </button>
       </div>
-      
-      {/* Camera View */}
-      <div className="flex-1 relative bg-black">
-        {error ? (
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="text-center text-white">
-              <AlertCircle size={48} className="mx-auto mb-4 text-red-500" />
-              <p>{error}</p>
-              <button
-                onClick={startCamera}
-                className="mt-4 px-4 py-2 bg-primary-600 rounded-lg"
-              >
-                Réessayer
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-            
-            <VehicleGuide 
-              vehicleType={vehicleType} 
-              currentPoint={currentPoint}
-            />
-            
-            {/* Progress indicator */}
-            <div className="absolute top-4 left-4 right-4">
-              <div className="bg-gray-800 bg-opacity-80 rounded-lg p-2">
-                <div className="flex space-x-1">
-                  {INSPECTION_POINTS.map((point, index) => (
-                    <div
-                      key={point.id}
-                      className={`flex-1 h-1 rounded-full transition-colors ${
-                        isPointCaptured(point.id)
-                          ? 'bg-green-500'
-                          : index === currentPointIndex
-                          ? 'bg-primary-500'
-                          : 'bg-gray-600'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-      
-      {/* Controls */}
-      <div className="bg-gray-900 p-4">
-        <div className="flex justify-between items-center">
-          <button
-            onClick={() => currentPointIndex > 0 && setCurrentPointIndex(prev => prev - 1)}
-            disabled={currentPointIndex === 0}
-            className="p-3 bg-gray-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Précédent
-          </button>
-          
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={capturePhoto}
-            disabled={isCapturing || isPointCaptured(currentPoint.id)}
-            className={`p-6 rounded-full transition-all ${
-              isPointCaptured(currentPoint.id)
-                ? 'bg-green-500'
-                : 'bg-primary-600 hover:bg-primary-700'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            {isPointCaptured(currentPoint.id) ? (
-              <Check size={32} className="text-white" />
-            ) : (
-              <Camera size={32} className="text-white" />
-            )}
-          </motion.button>
-          
-          <button
-            onClick={() => currentPointIndex < INSPECTION_POINTS.length - 1 && setCurrentPointIndex(prev => prev + 1)}
-            disabled={currentPointIndex === INSPECTION_POINTS.length - 1}
-            className="p-3 bg-gray-800 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Suivant
-          </button>
-        </div>
-        
-        {allPointsCaptured && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 text-center"
-          >
-            <p className="text-green-500 font-medium mb-2">Inspection complète!</p>
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+
+      {/* 3. Center HUD (Error/Processing) */}
+      <div className="flex-1 relative z-10 flex flex-col items-center justify-center pointer-events-none p-6">
+        <AnimatePresence mode="wait">
+          {isProcessing ? (
+            <motion.div 
+              key="processing"
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-black/60 backdrop-blur-xl px-10 py-8 rounded-[2.5rem] text-center border border-white/20 shadow-2xl"
             >
-              Terminer l'inspection
-            </button>
-          </motion.div>
-        )}
+              <div className="w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+              <p className="text-sm font-black uppercase tracking-widest animate-pulse">Scan IA en cours...</p>
+            </motion.div>
+          ) : validationError ? (
+            <motion.div 
+              key="error"
+              initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} 
+              className="bg-rose-600/90 backdrop-blur-xl p-6 rounded-3xl flex items-center gap-4 border border-white/20 shadow-2xl pointer-events-auto max-w-sm"
+            >
+              <AlertCircle size={24} className="shrink-0" />
+              <div>
+                <p className="font-black uppercase text-[10px] tracking-widest opacity-80 mb-1">Qualité insuffisante</p>
+                <p className="text-sm font-bold leading-tight">{validationError}</p>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
-      
-      {/* Hidden canvas for image processing */}
+
+      {/* 4. Minimal Footer (One Large Button) */}
+      <div className="relative z-20 p-8 pb-12 bg-gradient-to-t from-black via-black/40 to-transparent">
+        <div className="max-w-xs mx-auto flex flex-col items-center gap-6">
+          
+          <AnimatePresence mode="wait">
+            {isValidated ? (
+              <motion.button
+                key="continue"
+                initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
+                onClick={() => {
+                  if (allPointsCaptured) {
+                    onClose();
+                  } else {
+                    setCurrentPointIndex(prev => prev + 1);
+                  }
+                }}
+                className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-white font-black uppercase tracking-[0.2em] rounded-3xl shadow-[0_20px_50px_rgba(16,185,129,0.3)] flex items-center justify-center gap-3 active:scale-95 transition-all"
+              >
+                {allPointsCaptured ? 'Terminer le Scan' : 'Continuer'}
+                <ChevronRight size={20} />
+              </motion.button>
+            ) : (
+              <motion.button
+                key="capture"
+                initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+                onClick={capturePhoto}
+                disabled={isProcessing}
+                className="w-24 h-24 bg-white rounded-full flex items-center justify-center border-8 border-white/20 shadow-2xl active:scale-95 transition-all disabled:opacity-30"
+              >
+                <div className="w-4 h-4 bg-black rounded-full" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {!isValidated && (
+            <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest text-center">
+              Positionnez le véhicule dans le cadre
+            </p>
+          )}
+        </div>
+      </div>
+
       <canvas ref={canvasRef} className="hidden" />
     </div>
   );

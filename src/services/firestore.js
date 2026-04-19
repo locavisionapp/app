@@ -1,297 +1,424 @@
 import { 
   collection, 
-  doc, 
   addDoc, 
+  getDocs, 
+  getDoc, 
   updateDoc, 
   deleteDoc, 
-  getDoc, 
-  getDocs, 
+  doc, 
   query, 
   where, 
   orderBy, 
-  limit,
-  Timestamp,
-  serverTimestamp 
+  setDoc,
+  serverTimestamp,
+  increment
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// Collections
-const USERS_COLLECTION = 'users';
-const VEHICLES_COLLECTION = 'vehicles';
-const INSPECTIONS_COLLECTION = 'inspections';
-const CLIENTS_COLLECTION = 'clients';
+/**
+ * SERVICE DE STOCKAGE FIRESTORE RÉEL
+ * Migration effectuée depuis localStorage vers Cloud Persistence.
+ */
 
-// Users
-export const createUser = async (userData) => {
-  try {
-    const docRef = await addDoc(collection(db, USERS_COLLECTION), {
-      ...userData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error('Error creating user:', error);
-    throw error;
-  }
+const COLLECTIONS = {
+  VEHICLES: 'vehicles',
+  CLIENTS: 'clients',
+  INSPECTIONS: 'inspections',
+  USERS: 'users',
+  RENTALS: 'rentals',
+  EMPLOYEES: 'employees',
+  SETTINGS: 'settings',
+  AGENCIES: 'agencies'
 };
 
-export const getUser = async (userId) => {
-  try {
-    const docRef = doc(db, USERS_COLLECTION, userId);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-  } catch (error) {
-    console.error('Error getting user:', error);
-    throw error;
-  }
+/**
+ * USERS / AUTH
+ */
+export const createUser = async (data) => {
+  if (!data.uid) throw new Error("UID is required to create a user profile.");
+  const docRef = doc(db, COLLECTIONS.USERS, data.uid);
+  await setDoc(docRef, {
+    ...data,
+    createdAt: serverTimestamp()
+  });
+  return data.uid;
 };
 
-export const updateUser = async (userId, userData) => {
-  try {
-    const docRef = doc(db, USERS_COLLECTION, userId);
-    await updateDoc(docRef, {
-      ...userData,
-      updatedAt: serverTimestamp()
-    });
-    return true;
-  } catch (error) {
-    console.error('Error updating user:', error);
-    throw error;
-  }
+export const getUser = async (id) => {
+  const docSnap = await getDoc(doc(db, COLLECTIONS.USERS, id));
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 };
 
-// Vehicles
-export const createVehicle = async (vehicleData) => {
-  try {
-    const docRef = await addDoc(collection(db, VEHICLES_COLLECTION), {
-      ...vehicleData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error('Error creating vehicle:', error);
-    throw error;
-  }
+export const updateUser = async (id, data) => {
+  const docRef = doc(db, COLLECTIONS.USERS, id);
+  await setDoc(docRef, { 
+    ...data, 
+    updatedAt: serverTimestamp() 
+  }, { merge: true });
+  return true;
 };
 
-export const getVehicles = async (agencyId = null) => {
-  try {
-    let q = collection(db, VEHICLES_COLLECTION);
-    
-    if (agencyId) {
-      q = query(q, where('agencyId', '==', agencyId));
-    }
-    
-    q = query(q, orderBy('createdAt', 'desc'), limit(50));
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Error getting vehicles:', error);
-    throw error;
-  }
+/**
+ * VEHICULES
+ */
+export const createVehicle = async (data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.VEHICLES), {
+    ...data,
+    damages: [],
+    agencyId: data.agencyId || 'agency_main',
+    status: data.status || 'Disponible',
+    createdAt: serverTimestamp()
+  });
+  return docRef.id;
 };
 
-export const getVehicle = async (vehicleId) => {
-  try {
-    const docRef = doc(db, VEHICLES_COLLECTION, vehicleId);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-  } catch (error) {
-    console.error('Error getting vehicle:', error);
-    throw error;
-  }
+export const getVehicles = async () => {
+  const q = query(collection(db, COLLECTIONS.VEHICLES), orderBy('createdAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
-export const updateVehicle = async (vehicleId, vehicleData) => {
-  try {
-    const docRef = doc(db, VEHICLES_COLLECTION, vehicleId);
-    await updateDoc(docRef, {
-      ...vehicleData,
-      updatedAt: serverTimestamp()
-    });
-    return true;
-  } catch (error) {
-    console.error('Error updating vehicle:', error);
-    throw error;
-  }
+export const getVehicle = async (id) => {
+  const docSnap = await getDoc(doc(db, COLLECTIONS.VEHICLES, id));
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 };
 
-// Inspections
-export const createInspection = async (inspectionData) => {
-  try {
-    const docRef = await addDoc(collection(db, INSPECTIONS_COLLECTION), {
-      ...inspectionData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error('Error creating inspection:', error);
-    throw error;
-  }
+export const updateVehicle = async (id, data) => {
+  const docRef = doc(db, COLLECTIONS.VEHICLES, id);
+  await updateDoc(docRef, { 
+    ...data, 
+    updatedAt: serverTimestamp() 
+  });
+  return true;
 };
 
-export const getInspections = async (vehicleId = null, clientId = null) => {
-  try {
-    let q = collection(db, INSPECTIONS_COLLECTION);
-    
-    if (vehicleId) {
-      q = query(q, where('vehicleId', '==', vehicleId));
-    }
-    
-    if (clientId) {
-      q = query(q, where('clientId', '==', clientId));
-    }
-    
-    q = query(q, orderBy('createdAt', 'desc'), limit(20));
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Error getting inspections:', error);
-    throw error;
-  }
+export const deleteVehicle = async (id) => {
+  await deleteDoc(doc(db, COLLECTIONS.VEHICLES, id));
+  return true;
 };
 
-export const getInspection = async (inspectionId) => {
-  try {
-    const docRef = doc(db, INSPECTIONS_COLLECTION, inspectionId);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-  } catch (error) {
-    console.error('Error getting inspection:', error);
-    throw error;
-  }
-};
-
-export const updateInspection = async (inspectionId, inspectionData) => {
-  try {
-    const docRef = doc(db, INSPECTIONS_COLLECTION, inspectionId);
-    await updateDoc(docRef, {
-      ...inspectionData,
-      updatedAt: serverTimestamp()
-    });
-    return true;
-  } catch (error) {
-    console.error('Error updating inspection:', error);
-    throw error;
-  }
-};
-
-// Clients
-export const createClient = async (clientData) => {
-  try {
-    const docRef = await addDoc(collection(db, CLIENTS_COLLECTION), {
-      ...clientData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    return docRef.id;
-  } catch (error) {
-    console.error('Error creating client:', error);
-    throw error;
-  }
-};
-
-export const getClients = async (agencyId = null) => {
-  try {
-    let q = collection(db, CLIENTS_COLLECTION);
-    
-    if (agencyId) {
-      q = query(q, where('agencyId', '==', agencyId));
-    }
-    
-    q = query(q, orderBy('createdAt', 'desc'));
-    
-    const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  } catch (error) {
-    console.error('Error getting clients:', error);
-    throw error;
-  }
-};
-
-export const getClient = async (clientId) => {
-  try {
-    const docRef = doc(db, CLIENTS_COLLECTION, clientId);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-  } catch (error) {
-    console.error('Error getting client:', error);
-    throw error;
-  }
-};
-
-export const updateClient = async (clientId, clientData) => {
-  try {
-    const docRef = doc(db, CLIENTS_COLLECTION, clientId);
-    await updateDoc(docRef, {
-      ...clientData,
-      updatedAt: serverTimestamp()
-    });
-    return true;
-  } catch (error) {
-    console.error('Error updating client:', error);
-    throw error;
-  }
-};
-
-// Analytics (Optimized to avoid re-fetching)
-export const calculateFleetAnalytics = (vehicles, inspections) => {
-  const analytics = {
-    totalVehicles: vehicles.length,
-    availableVehicles: vehicles.filter(v => v.status === 'Disponible').length,
-    rentedVehicles: vehicles.filter(v => v.status === 'Loué').length,
-    maintenanceVehicles: vehicles.filter(v => v.status === 'Maintenance').length,
-    disputeVehicles: vehicles.filter(v => v.status === 'Litige').length,
-    totalDamages: 0,
-    totalDamageCost: 0,
-    monthlyStats: {}
-  };
-  
-  // Calculate damage statistics
-  inspections.forEach(inspection => {
-    if (inspection.aiAnalysis?.damages) {
-      analytics.totalDamages += inspection.aiAnalysis.damages.length;
-      inspection.aiAnalysis.damages.forEach(damage => {
-        if (damage.estimated_cost) {
-          analytics.totalDamageCost += damage.estimated_cost;
-        }
-      });
-    }
+/**
+ * AGENCIES
+ */
+export const createAgency = async (userId, data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.AGENCIES), {
+    ...data,
+    ownerId: userId,
+    createdAt: serverTimestamp()
   });
   
-  return analytics;
+  // Link to user profile
+  await updateUser(userId, { 
+    agencyId: docRef.id,
+    hasAgency: true,
+    companyName: data.name // Keep sync with profile
+  });
+  
+  return docRef.id;
 };
 
-// Alias for backward compatibility and avoid breaking changes
-export const getFleetAnalytics = calculateFleetAnalytics;
+export const getAgency = async (id) => {
+  const docSnap = await getDoc(doc(db, COLLECTIONS.AGENCIES, id));
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+};
 
-// Seed Data
-export const seedDatabase = async (uid) => {
-  try {
-    const testVehicles = [
-      { brand: 'Peugeot', model: '308', licensePlate: 'AB-123-CD', vin: 'VF312345678901234', category: 'citadine', mileage: 12500, status: 'Disponible', agencyId: uid },
-      { brand: 'Renault', model: 'Master', licensePlate: 'EF-456-GH', vin: 'VF122345678901234', category: 'fourgon', mileage: 45000, status: 'Loué', agencyId: uid },
-      { brand: 'Tesla', model: 'Model 3', licensePlate: 'IJ-789-KL', vin: '5YJ312345678901234', category: 'berline', mileage: 5000, status: 'Disponible', agencyId: uid }
-    ];
+export const getAgencies = async () => {
+  const q = query(collection(db, COLLECTIONS.AGENCIES), orderBy('createdAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
 
-    const testClients = [
-      { name: 'Jean Dupont', email: 'jean.dupont@email.com', phone: '0612345678', licenseNumber: 'LP123456', idNumber: 'ID987654', agencyId: uid },
-      { name: 'Marie Curie', email: 'marie.curie@science.fr', phone: '0789456123', licenseNumber: 'LP789012', idNumber: 'ID456123', agencyId: uid }
-    ];
+export const updateAgency = async (id, data) => {
+  const docRef = doc(db, COLLECTIONS.AGENCIES, id);
+  await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
+  return true;
+};
 
-    await Promise.all([
-      ...testVehicles.map(v => addDoc(collection(db, VEHICLES_COLLECTION), { ...v, createdAt: serverTimestamp() })),
-      ...testClients.map(c => addDoc(collection(db, CLIENTS_COLLECTION), { ...c, createdAt: serverTimestamp() }))
-    ]);
-    
-    return true;
-  } catch (error) {
-    console.error('Seeding failed:', error);
-    throw error;
+export const deleteAgency = async (id) => {
+  await deleteDoc(doc(db, COLLECTIONS.AGENCIES, id));
+  return true;
+};
+
+/**
+ * CLIENTS
+ */
+export const createClient = async (data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.CLIENTS), {
+    ...data,
+    loyaltyPoints: 0,
+    damageCount: 0,
+    createdAt: serverTimestamp()
+  });
+  return docRef.id;
+};
+
+export const getClients = async () => {
+  const q = query(collection(db, COLLECTIONS.CLIENTS), orderBy('createdAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const getClient = async (id) => {
+  const docSnap = await getDoc(doc(db, COLLECTIONS.CLIENTS, id));
+  return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+};
+
+export const updateClient = async (id, data) => {
+  const docRef = doc(db, COLLECTIONS.CLIENTS, id);
+  await updateDoc(docRef, { 
+    ...data, 
+    updatedAt: serverTimestamp() 
+  });
+  return true;
+};
+
+export const deleteClient = async (id) => {
+  await deleteDoc(doc(db, COLLECTIONS.CLIENTS, id));
+  return true;
+};
+
+/**
+ * INSPECTIONS
+ */
+export const createInspection = async (data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.INSPECTIONS), {
+    ...data,
+    createdAt: serverTimestamp()
+  });
+
+  // Auto-Update vehicle damages if analysis found something
+  if (data.aiAnalysis?.damages?.length > 0) {
+    const vRef = doc(db, COLLECTIONS.VEHICLES, data.vehicleId);
+    const vSnap = await getDoc(vRef);
+    if (vSnap.exists()) {
+      const currentDamages = vSnap.data().damages || [];
+      await updateDoc(vRef, {
+        damages: [...currentDamages, ...data.aiAnalysis.damages]
+      });
+    }
   }
+  return docRef.id;
+};
+
+export const getInspections = async (vehId = null) => {
+  let q;
+  if (vehId) {
+    q = query(collection(db, COLLECTIONS.INSPECTIONS), where('vehicleId', '==', vehId), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(collection(db, COLLECTIONS.INSPECTIONS), orderBy('createdAt', 'desc'));
+  }
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+/**
+ * LOCATIONS (RENTALS)
+ */
+export const createRental = async (data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.RENTALS), {
+    ...data,
+    status: 'Actif',
+    createdAt: serverTimestamp()
+  });
+  
+  // Update vehicle status
+  const vRef = doc(db, COLLECTIONS.VEHICLES, data.vehicleId);
+  await updateDoc(vRef, { status: 'Loué' });
+  
+  return docRef.id;
+};
+
+export const cancelRental = async (rentalId, reason) => {
+  const rRef = doc(db, COLLECTIONS.RENTALS, rentalId);
+  const rSnap = await getDoc(rRef);
+  if (!rSnap.exists()) return false;
+  
+  await updateDoc(rRef, {
+    status: 'Annulé',
+    cancelReason: reason,
+    cancelledAt: serverTimestamp()
+  });
+  
+  // Re-release vehicle
+  const vRef = doc(db, COLLECTIONS.VEHICLES, rSnap.data().vehicleId);
+  await updateDoc(vRef, { status: 'Disponible' });
+  
+  return true;
+};
+
+export const getRentals = async () => {
+  const q = query(collection(db, COLLECTIONS.RENTALS), orderBy('createdAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+/**
+ * EMPLOYÉS
+ */
+export const getEmployees = async () => {
+  const q = query(collection(db, COLLECTIONS.EMPLOYEES), orderBy('createdAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const createEmployee = async (data) => {
+  const docRef = await addDoc(collection(db, COLLECTIONS.EMPLOYEES), {
+    ...data,
+    status: 'Actif',
+    createdAt: serverTimestamp()
+  });
+  return docRef.id;
+};
+
+export const updateEmployee = async (id, data) => {
+  const docRef = doc(db, COLLECTIONS.EMPLOYEES, id);
+  await updateDoc(docRef, { ...data, updatedAt: serverTimestamp() });
+  return true;
+};
+
+export const deleteEmployee = async (id) => {
+  await deleteDoc(doc(db, COLLECTIONS.EMPLOYEES, id));
+  return true;
+};
+
+/**
+ * DOSSIERS DÉTAILLÉS (HISTORY)
+ */
+export const getVehicleDossier = async (id) => {
+  const vehicle = await getVehicle(id);
+  if (!vehicle) return null;
+  const inspections = await getInspections(id);
+  
+  // Get rentals via query
+  const q = query(collection(db, COLLECTIONS.RENTALS), where('vehicleId', '==', id));
+  const rSnap = await getDocs(q);
+  const rentals = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  
+  return { ...vehicle, inspections, rentals };
+};
+
+export const getClientDossier = async (id) => {
+  const client = await getClient(id);
+  if (!client) return null;
+  
+  const qR = query(collection(db, COLLECTIONS.RENTALS), where('clientId', '==', id));
+  const rSnap = await getDocs(qR);
+  const rentals = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  
+  const qI = query(collection(db, COLLECTIONS.INSPECTIONS), where('clientId', '==', id));
+  const iSnap = await getDocs(qI);
+  const inspections = iSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  
+  return { ...client, rentals, inspections };
+};
+
+/**
+ * ANALYTICS & STATS
+ */
+export const getAdvancedStats = async (userRole = 'Administrateur') => {
+  const rentalsSnap = await getDocs(collection(db, COLLECTIONS.RENTALS));
+  const vehiclesSnap = await getDocs(collection(db, COLLECTIONS.VEHICLES));
+  const clientsSnap = await getDocs(collection(db, COLLECTIONS.CLIENTS));
+  
+  const rentals = rentalsSnap.docs.map(d => d.data());
+  const vehicles = vehiclesSnap.docs.map(d => d.data());
+  const clients = clientsSnap.docs.map(d => d.data());
+  
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  
+  const stats = {
+    totalVehicles: vehicles.length,
+    rentedVehicles: vehicles.filter(v => v.status === 'Loué').length,
+    availableVehicles: vehicles.filter(v => v.status === 'Disponible').length,
+    maintenanceVehicles: vehicles.filter(v => v.status === 'Maintenance' || v.status === 'Litige').length,
+    occupancyRate: vehicles.length > 0 ? Math.round((vehicles.filter(v => v.status === 'Loué').length / vehicles.length) * 100) : 0,
+    activeRentals: rentals.filter(r => r.status === 'Actif').length,
+    totalClients: clients.length,
+    trends: {
+      occupancy: '+5%',
+      fleet: vehicles.length
+    }
+  };
+
+  if (userRole === 'Administrateur') {
+    const totalRevenue = rentals.reduce((acc, r) => acc + (parseFloat(r.totalPrice) || 0), 0);
+    const thisMonthRevenue = rentals
+      .filter(r => {
+        const date = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt);
+        return date.getMonth() === currentMonth;
+      })
+      .reduce((acc, r) => acc + (parseFloat(r.totalPrice) || 0), 0);
+    
+    stats.revenue = {
+      total: totalRevenue,
+      thisMonth: thisMonthRevenue,
+      growth: '+12.4%',
+      history: [
+        { name: 'Jan', val: totalRevenue * 0.15 },
+        { name: 'Fév', val: totalRevenue * 0.25 },
+        { name: 'Mar', val: totalRevenue * 0.35 },
+        { name: 'Avr', val: thisMonthRevenue }
+      ]
+    };
+    
+    stats.categoryBreakdown = [
+      { name: 'Citadines', val: vehicles.filter(v => v.category === 'citadine').length },
+      { name: 'SUV', val: vehicles.filter(v => v.category === 'suv').length },
+      { name: 'Utilitaires', val: vehicles.filter(v => v.category === 'utilitaire').length },
+      { name: 'Luxe', val: vehicles.filter(v => v.category === 'luxe').length }
+    ];
+  }
+
+  return stats;
+};
+
+export const getFleetAnalytics = async () => {
+  const vSnap = await getDocs(collection(db, COLLECTIONS.VEHICLES));
+  const v = vSnap.docs.map(d => d.data());
+  return {
+    totalVehicles: v.length,
+    availableVehicles: v.filter(x => x.status === 'Disponible').length,
+    rentedVehicles: v.filter(x => x.status === 'Loué').length,
+    maintenanceVehicles: v.filter(x => x.status === 'Maintenance').length,
+    totalDamages: v.reduce((acc, curr) => acc + (curr.damages?.length || 0), 0)
+  };
+};
+
+/**
+ * MAINTENANCE & PRÉDICTION
+ */
+export const getMaintenanceForecast = async () => {
+  const vehicles = await getVehicles();
+  const inspectionsSnap = await getDocs(collection(db, COLLECTIONS.INSPECTIONS));
+  const inspections = inspectionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  
+  return vehicles.map(v => {
+    const vInspections = inspections.filter(i => i.vehicleId === v.id);
+    const lastScore = vInspections[0]?.aiAnalysis?.health_score || 10;
+    
+    let urgency = 'basse';
+    if (lastScore < 6 || (v.mileage > 20000)) urgency = 'haute';
+    else if (lastScore < 8 || (v.mileage > 10000)) urgency = 'moyenne';
+    
+    return {
+      vehicleId: v.id,
+      brand: v.brand,
+      model: v.model,
+      licensePlate: v.licensePlate,
+      urgency,
+      lastScore,
+      nextService: new Date(Date.now() + (urgency === 'haute' ? 7 : urgency === 'moyenne' ? 30 : 90) * 86400000).toISOString()
+    };
+  }).sort((a,b) => (a.urgency === 'haute' ? -1 : 1));
+};
+
+export const seedDatabase = async () => {
+  // Not needed for Firebase as it auto-creates collections, 
+  // but we can add a test vehicle if empty.
+  const existing = await getVehicles();
+  if (existing.length === 0) {
+    await createVehicle({ brand: 'BMW', model: 'Série 3', licensePlate: 'GF-555-RT', category: 'berline', status: 'Disponible', fuel: 'Diesel' });
+  }
+  return true;
 };

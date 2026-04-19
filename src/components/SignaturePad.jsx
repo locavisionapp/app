@@ -12,16 +12,33 @@ const SignaturePad = ({ onSignature, width = 400, height = 200 }) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    const resizeCanvas = () => {
+      if (!canvas) return;
+      const parent = canvas.parentElement;
+      if (!parent) return;
 
-    // Set canvas background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, width, height);
-  }, [width, height]);
+      const dpr = window.devicePixelRatio || 1;
+      const rect = parent.getBoundingClientRect();
+      
+      canvas.width = rect.width * dpr;
+      canvas.height = height * dpr;
+      
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.scale(dpr, dpr);
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    return () => window.removeEventListener('resize', resizeCanvas);
+  }, [height]);
 
   const getCoordinates = (e) => {
     const canvas = canvasRef.current;

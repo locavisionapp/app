@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
 import { 
   signInWithEmailAndPassword, 
@@ -11,17 +11,39 @@ import { createUser } from '../services/firestore';
 
 const AuthForm = ({ onSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
   const [formData, setFormData] = useState({
+    // Step 1: Account
     email: '',
     password: '',
-    displayName: '',
-    agencyName: ''
+    
+    // Step 2: Individual
+    firstName: '',
+    lastName: '',
+    phone: '',
+    address: '',
+    city: '',
+    
+    // Step 3: Company
+    companyName: '',
+    siren: ''
   });
+
+  const nextStep = () => setStep(prev => prev + 1);
+  const prevStep = () => setStep(prev => prev - 1);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // If registration and not at final step, just move forward
+    if (!isLogin && step < 3) {
+      nextStep();
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -35,18 +57,27 @@ const AuthForm = ({ onSuccess }) => {
           formData.password
         );
         
+        const fullName = `${formData.firstName} ${formData.lastName}`;
+        
         // Update Firebase Auth profile
         await updateProfile(userCredential.user, {
-          displayName: formData.displayName
+          displayName: fullName
         });
 
-        // Create Firestore record
+        // Create Firestore record with full administrative data
         await createUser({
           uid: userCredential.user.uid,
           email: formData.email,
-          displayName: formData.displayName,
-          agencyName: formData.agencyName,
-          role: 'Admin', // Default for first user
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          displayName: fullName,
+          phone: formData.phone,
+          address: formData.address,
+          city: formData.city,
+          companyName: formData.companyName,
+          siren: formData.siren,
+          role: 'Administrateur',
+          subscriptionStatus: 'pending_payment',
           createdAt: new Date().toISOString()
         });
       }
@@ -54,21 +85,8 @@ const AuthForm = ({ onSuccess }) => {
     } catch (err) {
       console.error('Auth error:', err);
       let errorMessage = 'Une erreur est survenue.';
-      
-      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
-        errorMessage = 'Email ou mot de passe incorrect.';
-      } else if (err.code === 'auth/user-not-found') {
-        errorMessage = 'Aucun compte trouvé avec cet email. Veuillez vous inscrire.';
-      } else if (err.code === 'auth/email-already-in-use') {
-        errorMessage = 'Cet email est déjà utilisé par un autre compte.';
-      } else if (err.code === 'auth/operation-not-allowed') {
-        errorMessage = 'La connexion par email/mot de passe n\'est pas activée dans Firebase.';
-      } else if (err.code === 'auth/network-request-failed') {
-        errorMessage = 'Erreur réseau. Vérifiez votre connexion.';
-      } else {
-        errorMessage = err.message;
-      }
-      
+      if (err.code === 'auth/invalid-credential') errorMessage = 'Email ou mot de passe incorrect.';
+      else if (err.code === 'auth/email-already-in-use') errorMessage = 'Cet email est déjà utilisé.';
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -87,131 +105,132 @@ const AuthForm = ({ onSuccess }) => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl p-8 rounded-2xl shadow-2xl border border-white/20 dark:border-gray-700/30"
+        className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-2xl p-10 rounded-[2.5rem] shadow-2xl border border-white/20 dark:border-gray-800"
       >
-        <div className="text-center mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-            {isLogin ? 'Bon retour !' : 'Créer un compte'}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary-100 dark:bg-primary-900/30 text-primary-600 rounded-lg text-[9px] font-black uppercase tracking-widest mb-4">
+             LocaVision SaaS v2.0
+          </div>
+          <h2 className="text-4xl font-black text-gray-900 dark:text-white uppercase italic tracking-tighter">
+            {isLogin ? 'Connexion' : 'Propulsez votre agence'}
           </h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
+          <p className="text-gray-500 font-medium mt-2">
             {isLogin 
-              ? 'Connectez-vous pour gérer votre flotte' 
-              : 'Commencez à inspecter vos véhicules avec l\'IA'}
+              ? 'Heureux de vous revoir.' 
+              : `Étape ${step} sur 3 — ${step === 1 ? 'Compte' : step === 2 ? 'Administrateur' : 'Entreprise'}`}
           </p>
         </div>
 
         {error && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center space-x-3 text-red-600 dark:text-red-400"
-          >
-            <AlertCircle size={20} />
-            <span className="text-sm font-medium">{error}</span>
-          </motion.div>
+          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-2xl flex items-center gap-3 text-rose-600 text-xs font-bold uppercase">
+            <AlertCircle size={18} />
+            {error}
+          </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">
-                  Nom complet
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    name="displayName"
-                    required
-                    value={formData.displayName}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all"
-                    placeholder="Jean Dupont"
-                  />
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <AnimatePresence mode="wait">
+            {isLogin ? (
+              <motion.div key="login" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Email professionnel</label>
+                  <input type="email" name="email" required value={formData.email} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-white/5 rounded-2xl outline-none focus:ring-4 ring-primary-500/10 font-bold transition-all" placeholder="nom@agence.com" />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">
-                  Nom de l'agence
-                </label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    name="agencyName"
-                    required
-                    value={formData.agencyName}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all"
-                    placeholder="Station de Location Lyon"
-                  />
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Mot de passe</label>
+                  <input type="password" name="password" required value={formData.password} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-white/5 rounded-2xl outline-none focus:ring-4 ring-primary-500/10 font-bold transition-all" placeholder="••••••••" />
                 </div>
-              </div>
-            </>
-          )}
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">
-              Email professionnel
-            </label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="email"
-                name="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all"
-                placeholder="nom@agence.com"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">
-              Mot de passe
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="password"
-                name="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full btn-primary py-4 rounded-xl flex items-center justify-center space-x-2 group relative overflow-hidden"
-          >
-            {loading ? (
-              <Loader2 className="animate-spin" size={20} />
+              </motion.div>
             ) : (
-              <>
-                <span className="font-bold">{isLogin ? 'Se connecter' : 'Créer le compte'}</span>
-                <ArrowRight className="group-hover:translate-x-1 transition-transform" size={20} />
-              </>
+              <motion.div key={`step${step}`} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-4">
+                {step === 1 && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Email de l'administrateur</label>
+                      <input type="email" name="email" required value={formData.email} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-white/5 rounded-2xl outline-none focus:ring-4 ring-primary-500/10 font-bold transition-all" placeholder="votre@email.com" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Mot de passe sécurisé</label>
+                      <input type="password" name="password" required value={formData.password} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-white/5 rounded-2xl outline-none focus:ring-4 ring-primary-500/10 font-bold transition-all" placeholder="Min. 8 caractères" />
+                    </div>
+                  </>
+                )}
+
+                {step === 2 && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Prénom</label>
+                        <input type="text" name="firstName" required value={formData.firstName} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Nom</label>
+                        <input type="text" name="lastName" required value={formData.lastName} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Téléphone Direct</label>
+                      <input type="tel" name="phone" required value={formData.phone} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" placeholder="06 .. .. .. .." />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Adresse Personnelle / Bureau</label>
+                      <input type="text" name="address" required value={formData.address} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" />
+                    </div>
+                  </>
+                )}
+
+                {step === 3 && (
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">Raison Sociale</label>
+                      <input type="text" name="companyName" required value={formData.companyName} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" placeholder="Nom de l'agence..." />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-500 dark:text-primary-500/60 tracking-[0.2em] ml-1">N° SIREN (Optionnel)</label>
+                      <input type="text" name="siren" value={formData.siren} onChange={handleChange} className="w-full px-5 py-4 bg-gray-50 dark:bg-slate-800/50 border-gray-200 dark:border-white/5 rounded-2xl outline-none font-bold" placeholder="9 chiffres" />
+                    </div>
+                    <div className="p-4 bg-primary-50 dark:bg-primary-900/20 rounded-2xl border border-primary-100 dark:border-primary-800">
+                       <p className="text-[9px] font-black text-primary-600 uppercase tracking-widest leading-relaxed">
+                         En cliquant sur terminer, vous acceptez nos conditions générales de vente et d'utilisation du service LocaVision.
+                       </p>
+                    </div>
+                  </>
+                )}
+              </motion.div>
             )}
-          </button>
+          </AnimatePresence>
+
+          <div className="flex gap-4 pt-4">
+            {!isLogin && step > 1 && (
+              <button type="button" onClick={prevStep} className="flex-1 py-4 bg-slate-100 dark:bg-gray-800 text-slate-500 rounded-2xl font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all">Retour</button>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-[2] btn-primary py-4 rounded-2xl flex items-center justify-center gap-3 group shadow-xl shadow-primary-500/20 active:scale-95 transition-all"
+            >
+              {loading ? (
+                <Loader2 className="animate-spin" size={20} />
+              ) : (
+                <>
+                  <span className="font-black uppercase text-[10px] tracking-widest">
+                    {isLogin ? 'Se connecter' : step === 3 ? 'Finaliser l\'inscription' : 'Continuer'}
+                  </span>
+                  <ArrowRight className="group-hover:translate-x-1 transition-transform" size={18} />
+                </>
+              )}
+            </button>
+          </div>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700 text-center">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {isLogin ? "Vous n'avez pas de compte ?" : "Vous avez déjà un compte ?"}
+        <div className="mt-10 pt-8 border-t border-gray-100 dark:border-gray-800 text-center">
+          <p className="text-xs font-bold text-gray-400">
+            {isLogin ? "Nouveau chez LocaVision ?" : "Déjà membre de la flotte ?"}
             <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="ml-2 font-bold text-primary-600 hover:text-primary-700 dark:text-primary-400 transition-colors"
+              onClick={() => { setIsLogin(!isLogin); setStep(1); }}
+              className="ml-2 font-black text-primary-600 hover:text-primary-700 transition-colors uppercase tracking-widest"
             >
-              {isLogin ? "S'inscrire" : "Se connecter"}
+              {isLogin ? "S'inscrire" : "Connexion"}
             </button>
           </p>
         </div>

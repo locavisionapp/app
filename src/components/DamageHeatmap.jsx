@@ -4,7 +4,7 @@ import { DAMAGE_TYPES, DAMAGE_LOCATIONS } from '../types';
 import InteractiveModel from './InteractiveModel';
 
 const DamageHeatmap = ({ damages, vehicleType = 'citadine' }) => {
-  const [view, setView] = React.useState('front');
+  // Plus besoin de switch de vue car le plan technique affiche tout d'un coup
   
   const getDamageIcon = (type) => {
     switch (type) {
@@ -48,36 +48,13 @@ const DamageHeatmap = ({ damages, vehicleType = 'citadine' }) => {
         </div>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 2.5D Interactive Model */}
-        <div className="space-y-4">
-          <div className="flex justify-center space-x-2 bg-gray-100 dark:bg-gray-700 p-1 rounded-xl w-fit mx-auto">
-            <button
-              onClick={() => setView('front')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                view === 'front' 
-                ? 'bg-white dark:bg-gray-600 text-primary-600 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Avant / Haut
-            </button>
-            <button
-              onClick={() => setView('rear')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${
-                view === 'rear' 
-                ? 'bg-white dark:bg-gray-600 text-primary-600 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Arrière / Côté
-            </button>
-          </div>
-
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        {/* Plan Technique Interactif */}
+        <div className="xl:col-span-2 space-y-4">
           <InteractiveModel 
             vehicleType={vehicleType}
             damages={damages}
-            view={view}
+            view="all"
             onPartClick={(part) => console.log('Part clicked:', part)}
           />
           

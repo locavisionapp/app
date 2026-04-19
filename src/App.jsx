@@ -11,7 +11,15 @@ import {
   Moon,
   Sun,
   Wifi,
-  WifiOff
+  WifiOff,
+  Scan,
+  Calendar,
+  Briefcase,
+  LayoutDashboard,
+  UserCircle,
+  Activity,
+  Wrench,
+  MapPin
 } from 'lucide-react';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -26,18 +34,61 @@ import AuthForm from './components/AuthForm';
 import { signOut } from 'firebase/auth';
 import InspectionWizard from './components/InspectionWizard';
 import SyncManager from './components/SyncManager';
+import Rentals from './pages/Rentals';
+import SettingsPage from './pages/Settings';
+import Employees from './pages/Employees';
+import Analytics from './pages/Analytics';
+import Maintenance from './pages/Maintenance';
+import { getAdvancedStats, getUser } from './services/firestore';
+import SubscriptionWizard from './components/SubscriptionWizard';
+import LandingPage from './pages/LandingPage';
+import AgencySetup from './components/AgencySetup';
+import Legal from './pages/Legal';
+import Agencies from './pages/Agencies';
 
 const App = () => {
   const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [agency, setAgency] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [showLegal, setShowLegal] = useState(null); // 'mentions', 'cgu', 'privacy'
+  const [currentAgency, setCurrentAgency] = useState('agency_main');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) return JSON.parse(saved);
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pageData, setPageData] = useState(null);
+
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+      if (user) {
+        const userProfile = await getUser(user.uid);
+        setProfile(userProfile);
+        if (userProfile?.agencyId) {
+          const { getAgency } = await import('./services/firestore');
+          const agencyData = await getAgency(userProfile.agencyId);
+          setAgency(agencyData);
+        }
+      } else {
+        setProfile(null);
+        setAgency(null);
+      }
       setLoading(false);
     });
 
@@ -57,13 +108,7 @@ const App = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
+
 
   const handleCapture = (photoData) => {
     setCapturedImages(prev => [...prev, photoData]);
@@ -80,13 +125,19 @@ const App = () => {
     // Handle signature logic here
   };
 
-  const navigation = [
-    { id: 'dashboard', name: 'Dashboard', icon: BarChart3 },
-    { id: 'vehicles', name: 'Véhicules', icon: Car },
-    { id: 'inspection', name: 'Inspection', icon: Camera },
-    { id: 'clients', name: 'Clients', icon: Users },
-    { id: 'settings', name: 'Paramètres', icon: Settings },
-  ];
+  const [userRole, setUserRole] = useState('Administrateur'); // Mock role: 'Administrateur' or 'Employé'
+  const [navigation, setNavigation] = useState([
+    { name: 'Dashboard', icon: LayoutDashboard, id: 'dashboard' },
+    { name: 'Statistiques', icon: BarChart3, id: 'stats' },
+    { name: 'Locations', icon: Calendar, id: 'rentals' },
+    { name: 'Véhicules', icon: Car, id: 'vehicles' },
+    { name: 'Inspection', icon: Camera, id: 'inspection' },
+    {name: 'Clients', icon: Users, id: 'clients'},
+    {name: 'Agences', icon: Briefcase, id: 'agencies', adminOnly: true},
+    {name: 'Employés', icon: UserCircle, id: 'employees', adminOnly: true},
+    {name: 'Maintenance', icon: Wrench, id: 'maintenance'},
+    {name: 'Paramètres', icon: Settings, id: 'settings'},
+  ]);
 
   if (loading) {
     return (
@@ -99,9 +150,24 @@ const App = () => {
     );
   }
 
-  if (!user) {
+  if (!user && !showAuth) {
+    if (showLegal) {
+      return <Legal type={showLegal} onClose={() => setShowLegal(null)} />;
+    }
+    return <LandingPage onStart={() => setShowAuth(true)} onLogin={(type) => typeof type === 'string' ? setShowLegal(type) : setShowAuth(true)} />;
+  }
+
+  if (!user && showAuth) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-900 via-gray-900 to-black flex items-center justify-center p-4">
+      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-900 via-gray-900 to-black flex flex-col items-center justify-center p-4">
+        <div className="absolute top-8 left-8 z-20">
+           <button 
+             onClick={() => setShowAuth(false)}
+             className="px-6 py-3 bg-white/5 backdrop-blur-xl border border-white/10 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-white/10 transition-all flex items-center gap-2"
+           >
+              ← Retour à l'accueil
+           </button>
+        </div>
         {/* Background glow effects */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary-600/20 blur-[120px] rounded-full" />
@@ -146,159 +212,279 @@ const App = () => {
             </div>
           </motion.div>
 
-          <AuthForm onSuccess={() => {}} />
+          <AuthForm onSuccess={async () => {
+             const u = auth.currentUser;
+             if (u) {
+               const p = await getUser(u.uid);
+               setProfile(p);
+             }
+          }} />
         </div>
       </div>
     );
   }
 
+  // Subscription Guard - Must be paid to access dash
+  if (profile?.subscriptionStatus !== 'active') {
+    return (
+      <SubscriptionWizard 
+        user={user} 
+        onComplete={async () => {
+          const updatedProfile = await getUser(user.uid);
+          setProfile(updatedProfile);
+        }} 
+      />
+    );
+  }
+
+  // Agency Guard - Must create first agency after payment
+  if (profile?.subscriptionStatus === 'active' && !profile?.hasAgency) {
+    return (
+      <AgencySetup 
+        user={user} 
+        onComplete={async () => {
+          const updatedProfile = await getUser(user.uid);
+          setProfile(updatedProfile);
+        }} 
+      />
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 lg:hidden"
-              >
-                {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
-              
-              <div className="ml-3 lg:ml-0">
-                <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                  <Scan className="w-5 h-5 mr-2 text-primary-600 lg:hidden" />
-                  LocaVision
-                </h1>
-                <p className="hidden xs:block text-xs text-gray-600 dark:text-gray-400">
-                  Inspection IA de véhicules
-                </p>
-              </div>
-            </div>
+    <div className="layout-root">
+      {/* Immersive Background */}
+      <div className="mesh-gradient-bg" />
 
-            <div className="flex items-center space-x-2 lg:space-x-4">
-              {/* Connection Status - Label hidden on mobile */}
-              <div className="flex items-center space-x-1">
-                {isOnline ? (
-                  <Wifi className="w-4 h-4 text-green-500" />
-                ) : (
-                  <WifiOff className="w-4 h-4 text-red-500" />
-                )}
-                <span className="hidden md:inline text-xs text-gray-600 dark:text-gray-400">
-                  {isOnline ? 'En ligne' : 'Hors ligne'}
-                </span>
-              </div>
-
-              {/* Dark Mode Toggle */}
-              <button
-                onClick={() => setDarkMode(!darkMode)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-              </button>
-
-              {/* User Avatar & Logout */}
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white font-medium shadow-lg shadow-primary-500/20">
-                  {user.email?.charAt(0).toUpperCase()}
-                </div>
-                <button
-                  onClick={() => signOut(auth)}
-                  className="hidden sm:block text-sm font-medium text-gray-500 hover:text-red-500 transition-colors"
-                >
-                  Déconnexion
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex">
-        {/* Sidebar */}
-        <AnimatePresence>
-          {sidebarOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setSidebarOpen(false)}
-                className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-              />
-              <motion.aside
-                initial={{ x: -300 }}
-                animate={{ x: 0 }}
-                exit={{ x: -300 }}
-                className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-gray-800 shadow-lg z-50 lg:hidden"
-              >
+      {/* Mobile Nav Drawer */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] lg:hidden"
+            />
+            <motion.aside
+              initial={{ x: -280 }}
+              animate={{ x: 0 }}
+              exit={{ x: -280 }}
+              className="fixed left-0 top-0 bottom-0 w-72 bg-white dark:bg-[#0b0e14] shadow-2xl z-[70] lg:hidden flex flex-col"
+            >
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                 <SidebarContent 
                   navigation={navigation} 
                   currentPage={currentPage}
-                  setCurrentPage={setCurrentPage}
+                  setCurrentPage={(p) => { setCurrentPage(p); setSidebarOpen(false); }}
+                  userRole={userRole}
+                  currentAgency={currentAgency}
+                  setCurrentAgency={setCurrentAgency}
                 />
-              </motion.aside>
-            </>
-          )}
-        </AnimatePresence>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
-        {/* Desktop Sidebar */}
-        <aside className="hidden lg:block w-64 bg-white dark:bg-gray-800 shadow-lg min-h-screen">
-          <SidebarContent 
-            navigation={navigation} 
-            currentPage={currentPage}
-            setCurrentPage={setCurrentPage}
-          />
-        </aside>
+      {/* Desktop Sidebar (Solid) */}
+      <aside className="sidebar-container hidden lg:block">
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <SidebarContent 
+              navigation={navigation} 
+              currentPage={currentPage}
+              setCurrentPage={setCurrentPage}
+              userRole={userRole}
+              currentAgency={currentAgency}
+              setCurrentAgency={setCurrentAgency}
+            />
+          </div>
+          
+          <div className="p-6 border-t border-slate-200 dark:border-slate-800/50 bg-slate-50/50 dark:bg-black/20">
+             <div className="flex items-center justify-between mb-4">
+                <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Connectivité</p>
+                <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_bg-emerald-500]' : 'bg-rose-500'}`} />
+             </div>
+             <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500">
+                   {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
+                </div>
+                <div>
+                   <p className="text-xs font-bold text-slate-700 dark:text-slate-300 leading-none">Système {isOnline ? 'Live' : 'Offline'}</p>
+                   <p className="text-[10px] text-slate-500 mt-1">v6.0.4 - Pro Edition</p>
+                </div>
+             </div>
+          </div>
+      </aside>
 
-        {/* Main Content - Tighten padding on mobile */}
-        <main className="flex-1 p-4 lg:p-8 w-full overflow-x-hidden">
+      {/* Main Content Area */}
+      <main className="main-content">
+        {/* Solid Header */}
+        <header className="pro-header">
+          <div className="flex items-center gap-4">
+             <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 lg:hidden text-slate-500"
+             >
+                <Menu size={20} />
+             </button>
+             <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-800 lg:hidden" />
+             <div className="flex items-center gap-2">
+                <div className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-[10px] font-black uppercase tracking-widest text-slate-500">
+                   {currentPage.replace('-', ' ')}
+                </div>
+             </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors"
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+
+            <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2" />
+            
+            <button className="flex items-center gap-3 group" onClick={() => setCurrentPage('settings')}>
+               <div className="text-right hidden sm:block">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white leading-none capitalize">
+                    {profile?.firstName ? `${profile.firstName} ${profile.lastName}` : user.email?.split('@')[0]}
+                  </p>
+                  <p className="text-[10px] font-medium text-slate-400 mt-1">{profile?.companyName || 'Agence LocaVision'}</p>
+               </div>
+               <div className="w-10 h-10 bg-white dark:bg-slate-900 rounded-xl flex items-center justify-center text-primary-600 text-xs font-black ring-2 ring-slate-100 dark:ring-slate-800 group-hover:ring-primary-500/20 transition-all shadow-lg overflow-hidden">
+                  {agency?.logo ? (
+                    <img src={agency.logo} alt="Agency Logo" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-primary-600 flex items-center justify-center text-white uppercase">
+                       {profile?.firstName?.charAt(0) || user.email?.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+               </div>
+            </button>
+
+            <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2" />
+            
+            <button 
+               onClick={() => signOut(auth)}
+               className="p-2.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50/50 dark:hover:bg-rose-500/10 transition-all"
+               title="Déconnexion"
+            >
+               <X size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* Content Wrapper */}
+        <div className="flex-1 w-full overflow-x-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentPage}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
+              initial={{ opacity: 0, y: 10, scale: 0.99 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.99 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="p-8 max-w-[1600px] mx-auto w-full"
             >
-              {currentPage === 'dashboard' && <Dashboard />}
+              {currentPage === 'dashboard' && (
+                <Dashboard 
+                  setCurrentPage={setCurrentPage} 
+                  setPageData={setPageData} 
+                />
+              )}
+              {currentPage === 'stats' && <Analytics />}
+              {currentPage === 'rentals' && <Rentals setCurrentPage={setCurrentPage} setPageData={setPageData} />}
               {currentPage === 'vehicles' && <Vehicles />}
               {currentPage === 'clients' && <Clients />}
+              {currentPage === 'agencies' && userRole === 'Administrateur' && <Agencies />}
+              {currentPage === 'employees' && userRole === 'Administrateur' && <Employees />}
+              {currentPage === 'maintenance' && <Maintenance />}
+              {currentPage === 'settings' && (
+                <SettingsPage 
+                  profile={profile} 
+                  onUpdate={async () => {
+                    const p = await getUser(user.uid);
+                    setProfile(p);
+                  }} 
+                />
+              )}
               {currentPage === 'inspection' && (
-                <InspectionWizard onComplete={() => setCurrentPage('dashboard')} />
+                <InspectionWizard 
+                  onComplete={() => setCurrentPage('dashboard')} 
+                  onCancel={() => setCurrentPage('dashboard')}
+                  preSelectedVehicle={pageData?.preSelectedVehicle}
+                  preSelectedClient={pageData?.preSelectedClient}
+                />
               )}
             </motion.div>
           </AnimatePresence>
-        </main>
-      </div>
-
-      {/* Modals are now handled inside pages or components */}
-      <SyncManager />
+        </div>
+        <SyncManager />
+      </main>
     </div>
   );
 };
 
-const SidebarContent = ({ navigation, currentPage, setCurrentPage }) => (
-  <nav className="p-4 space-y-2">
-    {navigation.map((item) => {
-      const Icon = item.icon;
-      return (
-        <button
-          key={item.id}
-          onClick={() => setCurrentPage(item.id)}
-          className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-            currentPage === item.id
-              ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-400'
-              : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
-          }`}
-        >
-          <Icon size={20} />
-          <span className="font-medium">{item.name}</span>
-        </button>
-      );
-    })}
-  </nav>
+const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, currentAgency, setCurrentAgency }) => (
+  <div className="flex flex-col h-full bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
+    <div className="p-6">
+      <div className="flex items-center gap-3 px-2 mb-10">
+        <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20">
+          <Activity className="text-white" size={24} />
+        </div>
+        <div>
+          <h1 className="text-xl font-black tracking-tighter text-slate-900 dark:text-white uppercase">LocaVision</h1>
+          <p className="text-[10px] font-black text-primary-600 uppercase tracking-widest leading-none">Pro Fleet Manag.</p>
+        </div>
+      </div>
+    </div>
+
+    <div className="mx-4 mb-8 p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
+       <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3">
+          <MapPin size={10} /> Agence Actuelle
+       </div>
+       <select 
+          value={currentAgency}
+          onChange={(e) => setCurrentAgency(e.target.value)}
+          className="w-full bg-transparent text-xs font-bold text-slate-900 dark:text-white outline-none cursor-pointer"
+       >
+          <option value="agency_main">Agence Nord (Principal)</option>
+          <option value="agency_south">Agence Sud (Antenne)</option>
+          <option value="agency_log">Centre Logistique</option>
+       </select>
+    </div>
+
+    <div className="flex-1 px-4 overflow-y-auto custom-scrollbar">
+      <nav className="space-y-1">
+        {navigation.filter(item => !item.adminOnly || userRole === 'Administrateur').map((item) => {
+          const Icon = item.icon;
+          const isActive = currentPage === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setCurrentPage(item.id)}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all duration-300 relative group ${
+                isActive 
+                  ? 'bg-primary-600 text-white shadow-xl shadow-primary-500/20 active-nav-glow' 
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-primary-600'
+              }`}
+            >
+              <Icon size={20} className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
+              <span className="relative z-10">{item.name}</span>
+              {isActive && (
+                <motion.div
+                  layoutId="sidebar-active"
+                  className="absolute inset-0 bg-primary-600 rounded-xl -z-10"
+                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  </div>
 );
 
 export default App;
