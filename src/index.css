@@ -39,6 +39,7 @@
     overscroll-behavior-y: none;
     -webkit-font-smoothing: antialiased;
     scroll-behavior: smooth;
+    height: 100%;
   }
   
   h1, h2, h3, h4, .font-heading {
@@ -47,7 +48,7 @@
   }
 
   body {
-    @apply bg-white dark:bg-[#07090e] text-slate-900 dark:text-slate-100 min-h-screen overflow-x-hidden;
+    @apply bg-white dark:bg-[#07090e] text-slate-900 dark:text-slate-100 min-h-full overflow-x-hidden;
     -webkit-tap-highlight-color: transparent;
   }
 }
@@ -61,15 +62,15 @@
   }
 
   .layout-root {
-    @apply flex min-h-screen bg-white dark:bg-[#07090e];
+    @apply flex min-h-full bg-white dark:bg-[#07090e];
   }
 
   .sidebar-container {
-    @apply hidden lg:flex w-72 h-screen sticky top-0 flex-col glass-sidebar z-50;
+    @apply hidden lg:flex w-72 h-screen sticky top-0 flex-col glass-sidebar z-50 overflow-hidden;
   }
 
   .main-content {
-    @apply flex-1 min-w-0 h-screen overflow-y-auto relative flex flex-col;
+    @apply flex-1 min-w-0 relative flex flex-col bg-white dark:bg-[#07090e];
   }
 
   .pro-header {

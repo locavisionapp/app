@@ -16,7 +16,7 @@ import { extractVehicleInfoFromPlate } from '../services/gemini';
 import DamageHeatmap from '../components/DamageHeatmap';
 import CameraCapture from '../components/CameraCapture';
 
-const Vehicles = () => {
+const Vehicles = ({ currentAgency }) => {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -57,12 +57,12 @@ const Vehicles = () => {
     if (params.get('action') === 'add') {
       setShowModal(true);
     }
-  }, []);
+  }, [currentAgency]);
 
   const loadVehicles = async () => {
     setLoading(true);
     try {
-      const data = await getVehicles();
+      const data = await getVehicles(currentAgency);
       setVehicles(data || []);
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
@@ -89,7 +89,11 @@ const Vehicles = () => {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      const cleanData = { ...formData, updatedAt: new Date() };
+      const cleanData = { 
+        ...formData, 
+        agencyId: currentAgency,
+        updatedAt: new Date() 
+      };
       if (editingId) { 
         await updateVehicle(editingId, cleanData); 
       } else { 

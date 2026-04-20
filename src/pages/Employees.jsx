@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../services/firestore';
 
-const Employees = () => {
+const Employees = ({ currentAgency }) => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -32,12 +32,12 @@ const Employees = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentAgency]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const data = await getEmployees();
+      const data = await getEmployees(currentAgency);
       setEmployees(data || []);
     } catch (error) {
       console.error(error);
@@ -50,9 +50,9 @@ const Employees = () => {
     e.preventDefault();
     try {
       if (selectedEmployee) {
-        await updateEmployee(selectedEmployee.id, formData);
+        await updateEmployee(selectedEmployee.id, { ...formData, agencyId: currentAgency });
       } else {
-        await createEmployee(formData);
+        await createEmployee({ ...formData, agencyId: currentAgency });
       }
       setShowModal(false);
       resetForm();

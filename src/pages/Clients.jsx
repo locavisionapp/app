@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { getClients, createClient, updateClient, getClientDossier } from '../services/firestore';
 
-const Clients = () => {
+const Clients = ({ currentAgency }) => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,12 +37,12 @@ const Clients = () => {
 
   useEffect(() => {
     loadClients();
-  }, []);
+  }, [currentAgency]);
 
   const loadClients = async () => {
     setLoading(true);
     try {
-      const data = await getClients();
+      const data = await getClients(currentAgency);
       setClients(data || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -61,7 +61,11 @@ const Clients = () => {
     try {
       // Logic for naming
       const fullName = `${formData.firstName} ${formData.lastName}`;
-      await createClient({ ...formData, name: fullName });
+      await createClient({ 
+        ...formData, 
+        name: fullName,
+        agencyId: currentAgency 
+      });
       setShowModal(false);
       resetForm();
       loadClients();

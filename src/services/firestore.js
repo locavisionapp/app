@@ -72,8 +72,13 @@ export const createVehicle = async (data) => {
   return docRef.id;
 };
 
-export const getVehicles = async () => {
-  const q = query(collection(db, COLLECTIONS.VEHICLES), orderBy('createdAt', 'desc'));
+export const getVehicles = async (agencyId = null) => {
+  let q = collection(db, COLLECTIONS.VEHICLES);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(q, orderBy('createdAt', 'desc'));
+  }
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -152,8 +157,13 @@ export const createClient = async (data) => {
   return docRef.id;
 };
 
-export const getClients = async () => {
-  const q = query(collection(db, COLLECTIONS.CLIENTS), orderBy('createdAt', 'desc'));
+export const getClients = async (agencyId = null) => {
+  let q = collection(db, COLLECTIONS.CLIENTS);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(q, orderBy('createdAt', 'desc'));
+  }
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -200,13 +210,14 @@ export const createInspection = async (data) => {
   return docRef.id;
 };
 
-export const getInspections = async (vehId = null) => {
-  let q;
-  if (vehId) {
-    q = query(collection(db, COLLECTIONS.INSPECTIONS), where('vehicleId', '==', vehId), orderBy('createdAt', 'desc'));
-  } else {
-    q = query(collection(db, COLLECTIONS.INSPECTIONS), orderBy('createdAt', 'desc'));
-  }
+export const getInspections = async (vehId = null, agencyId = null) => {
+  let q = collection(db, COLLECTIONS.INSPECTIONS);
+  let constraints = [orderBy('createdAt', 'desc')];
+  
+  if (vehId) constraints.push(where('vehicleId', '==', vehId));
+  if (agencyId) constraints.push(where('agencyId', '==', agencyId));
+  
+  q = query(q, ...constraints);
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -246,8 +257,13 @@ export const cancelRental = async (rentalId, reason) => {
   return true;
 };
 
-export const getRentals = async () => {
-  const q = query(collection(db, COLLECTIONS.RENTALS), orderBy('createdAt', 'desc'));
+export const getRentals = async (agencyId = null) => {
+  let q = collection(db, COLLECTIONS.RENTALS);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(q, orderBy('createdAt', 'desc'));
+  }
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -255,8 +271,13 @@ export const getRentals = async () => {
 /**
  * EMPLOYÉS
  */
-export const getEmployees = async () => {
-  const q = query(collection(db, COLLECTIONS.EMPLOYEES), orderBy('createdAt', 'desc'));
+export const getEmployees = async (agencyId = null) => {
+  let q = collection(db, COLLECTIONS.EMPLOYEES);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(q, orderBy('createdAt', 'desc'));
+  }
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -315,14 +336,22 @@ export const getClientDossier = async (id) => {
 /**
  * ANALYTICS & STATS
  */
-export const getAdvancedStats = async (userRole = 'Administrateur') => {
-  const rentalsSnap = await getDocs(collection(db, COLLECTIONS.RENTALS));
-  const vehiclesSnap = await getDocs(collection(db, COLLECTIONS.VEHICLES));
-  const clientsSnap = await getDocs(collection(db, COLLECTIONS.CLIENTS));
+export const getAdvancedStats = async (userRole = 'Administrateur', agencyId = null) => {
+  let rSnap, vSnap, cSnap;
   
-  const rentals = rentalsSnap.docs.map(d => d.data());
-  const vehicles = vehiclesSnap.docs.map(d => d.data());
-  const clients = clientsSnap.docs.map(d => d.data());
+  if (agencyId) {
+    rSnap = await getDocs(query(collection(db, COLLECTIONS.RENTALS), where('agencyId', '==', agencyId)));
+    vSnap = await getDocs(query(collection(db, COLLECTIONS.VEHICLES), where('agencyId', '==', agencyId)));
+    cSnap = await getDocs(query(collection(db, COLLECTIONS.CLIENTS), where('agencyId', '==', agencyId)));
+  } else {
+    rSnap = await getDocs(collection(db, COLLECTIONS.RENTALS));
+    vSnap = await getDocs(collection(db, COLLECTIONS.VEHICLES));
+    cSnap = await getDocs(collection(db, COLLECTIONS.CLIENTS));
+  }
+  
+  const rentals = rSnap.docs.map(d => d.data());
+  const vehicles = vSnap.docs.map(d => d.data());
+  const clients = cSnap.docs.map(d => d.data());
   
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -373,8 +402,12 @@ export const getAdvancedStats = async (userRole = 'Administrateur') => {
   return stats;
 };
 
-export const getFleetAnalytics = async () => {
-  const vSnap = await getDocs(collection(db, COLLECTIONS.VEHICLES));
+export const getFleetAnalytics = async (agencyId = null) => {
+  let q = collection(db, COLLECTIONS.VEHICLES);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId));
+  }
+  const vSnap = await getDocs(q);
   const v = vSnap.docs.map(d => d.data());
   return {
     totalVehicles: v.length,
@@ -388,9 +421,13 @@ export const getFleetAnalytics = async () => {
 /**
  * MAINTENANCE & PRÉDICTION
  */
-export const getMaintenanceForecast = async () => {
-  const vehicles = await getVehicles();
-  const inspectionsSnap = await getDocs(collection(db, COLLECTIONS.INSPECTIONS));
+export const getMaintenanceForecast = async (agencyId = null) => {
+  const vehicles = await getVehicles(agencyId);
+  let q = collection(db, COLLECTIONS.INSPECTIONS);
+  if (agencyId) {
+    q = query(q, where('agencyId', '==', agencyId));
+  }
+  const inspectionsSnap = await getDocs(q);
   const inspections = inspectionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   
   return vehicles.map(v => {

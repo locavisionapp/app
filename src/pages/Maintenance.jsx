@@ -13,18 +13,19 @@ import {
 } from 'lucide-react';
 import { getMaintenanceForecast } from '../services/firestore';
 
-const Maintenance = () => {
+const Maintenance = ({ currentAgency }) => {
   const [forecast, setForecast] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     loadForecast();
-  }, []);
+  }, [currentAgency]);
 
   const loadForecast = async () => {
+    setLoading(true);
     try {
-      const data = await getMaintenanceForecast();
+      const data = await getMaintenanceForecast(currentAgency);
       setForecast(data);
     } catch (e) {
       console.error(e);

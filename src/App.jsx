@@ -39,7 +39,7 @@ import SettingsPage from './pages/Settings';
 import Employees from './pages/Employees';
 import Analytics from './pages/Analytics';
 import Maintenance from './pages/Maintenance';
-import { getAdvancedStats, getUser } from './services/firestore';
+import { getAdvancedStats, getUser, getAgencies } from './services/firestore';
 import SubscriptionWizard from './components/SubscriptionWizard';
 import LandingPage from './pages/LandingPage';
 import AgencySetup from './components/AgencySetup';
@@ -55,6 +55,7 @@ const App = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [showLegal, setShowLegal] = useState(null); // 'mentions', 'cgu', 'privacy'
   const [currentAgency, setCurrentAgency] = useState('agency_main');
+  const [agenciesList, setAgenciesList] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
@@ -138,6 +139,24 @@ const App = () => {
     {name: 'Maintenance', icon: Wrench, id: 'maintenance'},
     {name: 'Paramètres', icon: Settings, id: 'settings'},
   ]);
+
+  useEffect(() => {
+    const fetchAgencies = async () => {
+      try {
+        const list = await getAgencies();
+        setAgenciesList(list);
+        if (list.length > 0 && currentAgency === 'agency_main') {
+          // Si on n'a pas encore choisi d'agence, on prend la première par défaut
+          // Mais on garde currentAgency si elle est déjà valide
+          const exists = list.find(a => a.id === currentAgency);
+          if (!exists) setCurrentAgency(list[0].id);
+        }
+      } catch (error) {
+        console.error("Erreur chargement agences:", error);
+      }
+    };
+    if (user) fetchAgencies();
+  }, [user]);
 
   if (loading) {
     return (
@@ -251,8 +270,7 @@ const App = () => {
   }
 
   return (
-    <div className="layout-root">
-      {/* Immersive Background */}
+    <div className={`flex min-h-screen ${darkMode ? 'dark bg-[#07090e]' : 'bg-slate-50'} transition-colors duration-300`}>
       <div className="mesh-gradient-bg" />
 
       {/* Mobile Nav Drawer */}
@@ -288,17 +306,16 @@ const App = () => {
       </AnimatePresence>
 
       {/* Desktop Sidebar (Solid) */}
-      <aside className="sidebar-container hidden lg:block">
-          <div className="flex-1 overflow-y-auto custom-scrollbar">
-            <SidebarContent 
-              navigation={navigation} 
-              currentPage={currentPage}
-              setCurrentPage={setCurrentPage}
-              userRole={userRole}
-              currentAgency={currentAgency}
-              setCurrentAgency={setCurrentAgency}
-            />
-          </div>
+      <aside className="sidebar-container hidden lg:flex">
+          <SidebarContent 
+            navigation={navigation} 
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            userRole={userRole}
+            currentAgency={currentAgency}
+            setCurrentAgency={setCurrentAgency}
+            agenciesList={agenciesList}
+          />
           
           <div className="p-6 border-t border-slate-200 dark:border-slate-800/50 bg-slate-50/50 dark:bg-black/20">
              <div className="flex items-center justify-between mb-4">
@@ -318,7 +335,7 @@ const App = () => {
       </aside>
 
       {/* Main Content Area */}
-      <main className="main-content">
+      <main className="main-content min-h-screen">
         {/* Solid Header */}
         <header className="pro-header">
           <div className="flex items-center gap-4">
@@ -377,29 +394,30 @@ const App = () => {
         </header>
 
         {/* Content Wrapper */}
-        <div className="flex-1 w-full overflow-x-hidden">
+        <div className="flex-1 w-full flex flex-col">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentPage}
-              initial={{ opacity: 0, y: 10, scale: 0.99 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.99 }}
-              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-              className="p-8 max-w-[1600px] mx-auto w-full"
+              initial={{ opacity: 0, scale: 0.99 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.99 }}
+              transition={{ duration: 0.3 }}
+              className="p-8 max-w-[1600px] mx-auto w-full flex-1"
             >
               {currentPage === 'dashboard' && (
                 <Dashboard 
                   setCurrentPage={setCurrentPage} 
                   setPageData={setPageData} 
+                  activeAgency={agenciesList.find(a => a.id === currentAgency)}
                 />
               )}
-              {currentPage === 'stats' && <Analytics />}
-              {currentPage === 'rentals' && <Rentals setCurrentPage={setCurrentPage} setPageData={setPageData} />}
-              {currentPage === 'vehicles' && <Vehicles />}
-              {currentPage === 'clients' && <Clients />}
+              {currentPage === 'stats' && <Analytics currentAgency={currentAgency} />}
+              {currentPage === 'rentals' && <Rentals setCurrentPage={setCurrentPage} setPageData={setPageData} currentAgency={currentAgency} />}
+              {currentPage === 'vehicles' && <Vehicles currentAgency={currentAgency} />}
+              {currentPage === 'clients' && <Clients currentAgency={currentAgency} />}
               {currentPage === 'agencies' && userRole === 'Administrateur' && <Agencies />}
-              {currentPage === 'employees' && userRole === 'Administrateur' && <Employees />}
-              {currentPage === 'maintenance' && <Maintenance />}
+              {currentPage === 'employees' && userRole === 'Administrateur' && <Employees currentAgency={currentAgency} />}
+              {currentPage === 'maintenance' && <Maintenance currentAgency={currentAgency} />}
               {currentPage === 'settings' && (
                 <SettingsPage 
                   profile={profile} 
@@ -426,16 +444,27 @@ const App = () => {
   );
 };
 
-const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, currentAgency, setCurrentAgency }) => (
-  <div className="flex flex-col h-full bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800">
+const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, currentAgency, setCurrentAgency, agenciesList }) => {
+  const activeAgency = agenciesList.find(a => a.id === currentAgency) || agenciesList[0];
+
+  return (
+  <div className="flex flex-col h-full bg-white dark:bg-[#0b0e14] border-r border-slate-200 dark:border-slate-800">
     <div className="p-6">
       <div className="flex items-center gap-3 px-2 mb-10">
-        <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20">
-          <Activity className="text-white" size={24} />
+        <div className="w-12 h-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-center shadow-xl overflow-hidden group">
+          {activeAgency?.logo ? (
+            <img src={activeAgency.logo} alt={activeAgency.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full bg-primary-600 flex items-center justify-center text-white text-xl font-black italic">
+              {activeAgency?.name?.charAt(0) || 'L'}
+            </div>
+          )}
         </div>
-        <div>
-          <h1 className="text-xl font-black tracking-tighter text-slate-900 dark:text-white uppercase">LocaVision</h1>
-          <p className="text-[10px] font-black text-primary-600 uppercase tracking-widest leading-none">Pro Fleet Manag.</p>
+        <div className="min-w-0">
+          <h1 className="text-lg font-black tracking-tighter text-slate-900 dark:text-white uppercase italic truncate">
+            {activeAgency?.name || 'LocaVision'}
+          </h1>
+          <p className="text-[9px] font-black text-primary-600 uppercase tracking-widest leading-none opacity-60">Gestion de Flotte</p>
         </div>
       </div>
     </div>
@@ -449,13 +478,17 @@ const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, cur
           onChange={(e) => setCurrentAgency(e.target.value)}
           className="w-full bg-transparent text-xs font-bold text-slate-900 dark:text-white outline-none cursor-pointer"
        >
-          <option value="agency_main">Agence Nord (Principal)</option>
-          <option value="agency_south">Agence Sud (Antenne)</option>
-          <option value="agency_log">Centre Logistique</option>
+          {agenciesList.length > 0 ? (
+            agenciesList.map(agency => (
+              <option key={agency.id} value={agency.id}>{agency.name}</option>
+            ))
+          ) : (
+            <option value="agency_main">Chargement...</option>
+          )}
        </select>
     </div>
 
-    <div className="flex-1 px-4 overflow-y-auto custom-scrollbar">
+    <div className="flex-1 px-4 overflow-y-auto custom-scrollbar pb-10">
       <nav className="space-y-1">
         {navigation.filter(item => !item.adminOnly || userRole === 'Administrateur').map((item) => {
           const Icon = item.icon;
@@ -466,19 +499,12 @@ const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, cur
               onClick={() => setCurrentPage(item.id)}
               className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-bold transition-all duration-300 relative group ${
                 isActive 
-                  ? 'bg-primary-600 text-white shadow-xl shadow-primary-500/20 active-nav-glow' 
-                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-primary-600'
+                  ? 'bg-primary-600 text-white shadow-xl shadow-primary-500/20' 
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-950/50 hover:text-primary-600'
               }`}
             >
               <Icon size={20} className={`transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
               <span className="relative z-10">{item.name}</span>
-              {isActive && (
-                <motion.div
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 bg-primary-600 rounded-xl -z-10"
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                />
-              )}
             </button>
           );
         })}
@@ -486,5 +512,6 @@ const SidebarContent = ({ navigation, currentPage, setCurrentPage, userRole, cur
     </div>
   </div>
 );
+};
 
 export default App;

@@ -25,7 +25,7 @@ import { getFleetAnalytics as getAnalytics, getInspections as getRecentInspectio
 import DamageHeatmap from '../components/DamageHeatmap';
 import ComparisonView from '../components/ComparisonView';
 
-const Dashboard = ({ setCurrentPage, setPageData }) => {
+const Dashboard = ({ setCurrentPage, setPageData, activeAgency }) => {
   const [analytics, setAnalytics] = useState(null);
   const [recentInspections, setRecentInspections] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -35,15 +35,16 @@ const Dashboard = ({ setCurrentPage, setPageData }) => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [activeAgency?.id]);
 
   const loadData = async () => {
     setLoading(true);
     try {
+      const agencyId = activeAgency?.id;
       const [stats, inspections, cars] = await Promise.all([
-        getAnalytics(),
-        getRecentInspections(),
-        getVehicles()
+        getAnalytics(agencyId),
+        getRecentInspections(null, agencyId),
+        getVehicles(agencyId)
       ]);
       setAnalytics(stats);
       setRecentInspections(inspections);

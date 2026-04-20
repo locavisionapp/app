@@ -15,7 +15,10 @@ import {
   Trash2,
   CheckCircle2,
   Lock,
-  Loader2
+  Loader2,
+  FileText,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { getAgencies, createAgency, updateAgency, deleteAgency } from '../services/firestore';
 
@@ -26,15 +29,18 @@ const Agencies = () => {
   const [editingAgency, setEditingAgency] = useState(null);
   const [activeMenu, setActiveMenu] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [logoPreview, setLogoPreview] = useState(null);
 
   const [formData, setFormData] = useState({
     name: '',
     city: '',
     address: '',
     phone: '',
+    siren: '',
     status: 'Actif',
     staff: 0,
-    vehicles: 0
+    vehicles: 0,
+    logo: null
   });
 
   useEffect(() => {
@@ -50,6 +56,49 @@ const Agencies = () => {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const compressImage = (base64Str, maxWidth = 400, maxHeight = 400) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compression JPEG à 70%
+      };
+    });
+  };
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result);
+        setLogoPreview(compressed);
+        setFormData(prev => ({ ...prev, logo: compressed }));
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -87,14 +136,17 @@ const Agencies = () => {
   const handleEdit = (agency) => {
     setEditingAgency(agency);
     setFormData({
-      name: agency.name,
-      city: agency.city,
+      name: agency.name || '',
+      city: agency.city || '',
       address: agency.address || '',
       phone: agency.phone || '',
+      siren: agency.siren || '',
       status: agency.status || 'Actif',
       staff: agency.staff || 0,
-      vehicles: agency.vehicles || 0
+      vehicles: agency.vehicles || 0,
+      logo: agency.logo || null
     });
+    setLogoPreview(agency.logo || null);
     setShowModal(true);
     setActiveMenu(null);
   };
@@ -106,10 +158,13 @@ const Agencies = () => {
       city: '',
       address: '',
       phone: '',
+      siren: '',
       status: 'Actif',
       staff: 0,
-      vehicles: 0
+      vehicles: 0,
+      logo: null
     });
+    setLogoPreview(null);
   };
 
   return (
@@ -149,12 +204,19 @@ const Agencies = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
-              className="glass-card p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative group overflow-visible"
+              className="glass-card p-8 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 relative group overflow-visible h-full flex flex-col"
             >
               <div className="flex justify-between items-start mb-8">
-                 <div className="w-14 h-14 bg-primary-50 dark:bg-primary-900/20 rounded-2xl flex items-center justify-center text-primary-600 shadow-sm border border-primary-500/10">
-                    <Briefcase size={24} />
-                 </div>
+                 {agency.logo ? (
+                   <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-lg border border-slate-200 dark:border-white/10">
+                      <img src={agency.logo} alt={agency.name} className="w-full h-full object-cover" />
+                   </div>
+                 ) : (
+                   <div className="w-14 h-14 bg-primary-50 dark:bg-primary-900/20 rounded-2xl flex items-center justify-center text-primary-600 shadow-sm border border-primary-500/10">
+                      <Briefcase size={24} />
+                   </div>
+                 )}
+                 
                  <div className="flex items-center gap-2">
                     <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
                       agency.status === 'Principal' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
@@ -199,12 +261,12 @@ const Agencies = () => {
                  </div>
               </div>
 
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic mb-2">{agency.name}</h3>
+              <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter uppercase italic mb-2 truncate">{agency.name}</h3>
               <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase tracking-widest mb-6">
                  <MapPin size={12} /> {agency.city}
               </div>
 
-              <div className="space-y-4 mb-8">
+              <div className="space-y-4 mb-8 flex-1">
                  <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
                     <Phone size={14} className="text-primary-500" />
                     <span className="font-medium">{agency.phone || 'Non renseigné'}</span>
@@ -213,9 +275,13 @@ const Agencies = () => {
                     <Mail size={14} className="text-primary-500" />
                     <span className="font-medium truncate max-w-full">{agency.address || 'Adresse non renseignée'}</span>
                  </div>
+                 <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400">
+                    <FileText size={14} className="text-primary-500" />
+                    <span className="font-medium uppercase">SIREN: {agency.siren || 'Manquant'}</span>
+                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 p-5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50">
+              <div className="grid grid-cols-2 gap-4 p-5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50 mt-auto">
                  <div>
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Véhicules</p>
                     <p className="text-xl font-black text-slate-900 dark:text-white italic tracking-tighter">{agency.vehicles || 0}</p>
@@ -235,7 +301,7 @@ const Agencies = () => {
           {/* Placeholder for expansion */}
           <motion.div 
             onClick={() => { resetForm(); setShowModal(true); }}
-            className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-400 hover:border-primary-500 hover:text-primary-500 transition-all cursor-pointer group"
+            className="p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center justify-center text-slate-400 hover:border-primary-500 hover:text-primary-500 transition-all cursor-pointer group min-h-[300px]"
           >
              <div className="w-16 h-16 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center mb-4 group-hover:bg-primary-500 group-hover:text-white transition-all">
                 <Plus size={32} />
@@ -268,7 +334,7 @@ const Agencies = () => {
         {showModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" />
-             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative bg-white dark:bg-slate-950 p-10 rounded-[3rem] w-full max-w-xl shadow-2xl border border-white/10 overflow-hidden">
+             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="relative bg-white dark:bg-slate-950 p-10 rounded-[3rem] w-full max-w-xl shadow-2xl border border-white/10 overflow-y-auto max-h-[90vh]">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary-600/10 blur-[60px] rounded-full" />
                 <div className="relative z-10">
                    <div className="flex justify-between items-center mb-8">
@@ -280,6 +346,26 @@ const Agencies = () => {
                       </button>
                    </div>
                    <form className="space-y-6" onSubmit={handleSubmit}>
+                      {/* Logo Section */}
+                      <div className="flex flex-col items-center justify-center space-y-4 mb-8">
+                        <label className="relative group cursor-pointer">
+                            <div className={`w-32 h-32 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-white/20 flex items-center justify-center overflow-hidden transition-all group-hover:border-primary-500/50 ${logoPreview ? 'border-solid border-primary-500' : ''}`}>
+                                {logoPreview ? (
+                                  <img src={logoPreview} alt="Logo Preview" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="flex flex-col items-center gap-2 text-slate-400 group-hover:text-primary-500">
+                                      <ImageIcon size={32} strokeWidth={1.5} />
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-center px-4">Logo Agence</span>
+                                  </div>
+                                )}
+                                <div className="absolute inset-0 bg-primary-600/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                                    <Upload className="text-white" size={24} />
+                                </div>
+                            </div>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleLogoChange} />
+                        </label>
+                      </div>
+
                       <div className="space-y-1">
                          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Nom Commercial</label>
                          <input 
@@ -315,19 +401,31 @@ const Agencies = () => {
                             </select>
                          </div>
                       </div>
-                      <div className="space-y-1">
-                         <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Contact (Tél)</label>
-                         <input 
-                          className="premium-input" 
-                          placeholder="03 20 00 00 00" 
-                          value={formData.phone}
-                          onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                         />
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Contact (Tél)</label>
+                           <input 
+                            className="premium-input" 
+                            placeholder="03 20 00 .. " 
+                            value={formData.phone}
+                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                           />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">SIREN</label>
+                           <input 
+                            className="premium-input font-mono" 
+                            placeholder="9 chiffres" 
+                            required
+                            value={formData.siren}
+                            onChange={(e) => setFormData({...formData, siren: e.target.value})}
+                           />
+                        </div>
                       </div>
                       <div className="space-y-1">
                          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1">Adresse Complète</label>
                          <textarea 
-                          className="premium-input min-h-[100px]" 
+                          className="premium-input min-h-[80px]" 
                           placeholder="Numéro et rue..." 
                           value={formData.address}
                           onChange={(e) => setFormData({...formData, address: e.target.value})}

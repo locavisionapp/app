@@ -9,7 +9,7 @@ import { getRentals, getVehicles, getClients, createRental } from '../services/f
 import { generateRentalContractPDF } from '../services/pdfGenerator';
 import SignaturePad from '../components/SignaturePad';
 
-const Rentals = ({ setCurrentPage, setPageData }) => {
+const Rentals = ({ setCurrentPage, setPageData, currentAgency }) => {
   const [rentals, setRentals] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [clients, setClients] = useState([]);
@@ -50,7 +50,7 @@ const Rentals = ({ setCurrentPage, setPageData }) => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentAgency]);
 
   useEffect(() => {
     if (formData.vehicleId && vehicles.length > 0) {
@@ -80,9 +80,13 @@ const Rentals = ({ setCurrentPage, setPageData }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [r, v, c] = await Promise.all([getRentals(), getVehicles(), getClients()]);
+      const [r, v, c] = await Promise.all([
+        getRentals(currentAgency), 
+        getVehicles(currentAgency), 
+        getClients(currentAgency)
+      ]);
       setRentals(r || []);
-      setVehicles(v || []); // Show all for now, filter for search
+      setVehicles(v || []); 
       setClients(c || []);
     } catch (error) {
       console.error(error);
@@ -154,6 +158,7 @@ const Rentals = ({ setCurrentPage, setPageData }) => {
         vehicleName: `${vehicle.brand} ${vehicle.model}`,
         clientName: `${client.name}`,
         status: 'Actif',
+        agencyId: currentAgency,
         signatures: finalSignatures
       });
       
