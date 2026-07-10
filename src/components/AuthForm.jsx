@@ -17,8 +17,8 @@ const AuthForm = ({ onSuccess }) => {
   
   const [formData, setFormData] = useState({
     // Step 1: Account
-    email: '',
-    password: '',
+    email: 'entreprise@locavision.fr',
+    password: 'Auriol13390@',
     
     // Step 2: Individual
     firstName: '',

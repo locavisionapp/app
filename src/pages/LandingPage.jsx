@@ -47,13 +47,13 @@ const FeatureCard = ({ icon: Icon, title, description, delay }) => (
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true }}
     transition={{ delay, duration: 0.8 }}
-    className="glass-card p-8 rounded-[2.5rem] border border-white/5 bg-white/5 backdrop-blur-xl hover:bg-white/10 transition-all group"
+    className="glass-card p-6 md:p-8 rounded-2xl md:rounded-[2.5rem] border border-white/5 bg-white/5 backdrop-blur-xl hover:bg-white/10 transition-all group"
   >
-    <div className="w-14 h-14 bg-primary-600/20 rounded-2xl flex items-center justify-center text-primary-500 mb-6 group-hover:scale-110 group-hover:bg-primary-600 group-hover:text-white transition-all">
-      <Icon size={28} />
+    <div className="w-12 h-12 md:w-14 md:h-14 bg-primary-600/20 rounded-xl md:rounded-2xl flex items-center justify-center text-primary-500 mb-4 md:mb-6 group-hover:scale-110 group-hover:bg-primary-600 group-hover:text-white transition-all">
+      <Icon className="w-5 h-5 md:w-7 md:h-7" />
     </div>
-    <h3 className="text-xl font-black uppercase italic tracking-tighter text-white mb-4">{title}</h3>
-    <p className="text-gray-400 text-sm leading-relaxed font-medium">{description}</p>
+    <h3 className="text-lg md:text-xl font-black uppercase italic tracking-tighter text-white mb-3 md:mb-4">{title}</h3>
+    <p className="text-gray-400 text-xs md:text-sm leading-relaxed font-medium">{description}</p>
   </motion.div>
 );
 
@@ -80,37 +80,37 @@ const DemoSimulation = () => {
     return (
         <div className="relative group">
             <div className={`absolute inset-0 bg-primary-500/10 blur-[100px] transition-opacity duration-1000 ${phase === 'detected' ? 'opacity-100' : 'opacity-0'}`} />
-            <div className="relative z-10 bg-black/40 backdrop-blur-3xl rounded-[3rem] border border-white/10 p-2 shadow-2xl">
-                <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-[2.5rem]">
-                   <div className="flex items-center gap-4">
-                      <div className={`w-3 h-3 rounded-full ${phase === 'scanning' ? 'bg-primary-500 animate-pulse' : 'bg-emerald-500'}`} />
-                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white">
+            <div className="relative z-10 bg-black/40 backdrop-blur-3xl rounded-2xl md:rounded-[3rem] border border-white/10 p-1 md:p-2 shadow-2xl">
+                <div className="p-4 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/5 rounded-t-xl md:rounded-t-[2.5rem]">
+                   <div className="flex items-center gap-2 md:gap-4">
+                      <div className={`w-2.5 h-2.5 md:w-3 md:h-3 rounded-full ${phase === 'scanning' ? 'bg-primary-500 animate-pulse' : 'bg-emerald-500'}`} />
+                      <span className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.3em] text-white">
                          Status: {phase === 'scanning' ? 'Scan en cours...' : 'Expertise Terminée'}
                       </span>
                    </div>
-                   <div className="px-4 py-1.5 bg-primary-600 text-white text-[8px] font-black uppercase tracking-widest rounded-full">Gemini 2.0 Flash</div>
+                   <div className="px-2.5 py-1 md:px-4 md:py-1.5 bg-primary-600 text-white text-[8px] font-black uppercase tracking-widest rounded-full">Gemini 2.0 Flash</div>
                 </div>
-                <div className="p-8">
+                <div className="p-4 md:p-8">
                    <InteractiveModel damages={damages} />
                 </div>
                 {phase === 'detected' && (
                     <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-8 bg-primary-900/20 border-t border-white/5 space-y-4"
+                      className="p-4 md:p-8 bg-primary-900/20 border-t border-white/5 space-y-4"
                     >
                         <div className="flex justify-between items-center">
-                           <span className="text-xs font-black uppercase tracking-widest text-primary-400">Rapport de Dommages</span>
-                           <span className="text-xs font-black text-rose-500">2 Anomalies</span>
+                           <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-primary-400">Rapport de Dommages</span>
+                           <span className="text-[10px] md:text-xs font-black text-rose-500">2 Anomalies</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                           <div className="p-3 md:p-4 bg-black/40 rounded-xl md:rounded-2xl border border-white/5">
                               <p className="text-[9px] font-black uppercase text-gray-500 mb-1">Pare-choc Avant</p>
-                              <p className="text-sm font-bold text-white">Rayure Profonde (8cm)</p>
+                              <p className="text-xs md:text-sm font-bold text-white">Rayure Profonde (8cm)</p>
                            </div>
-                           <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                           <div className="p-3 md:p-4 bg-black/40 rounded-xl md:rounded-2xl border border-white/5">
                               <p className="text-[9px] font-black uppercase text-gray-500 mb-1">Aile Gauche</p>
-                              <p className="text-sm font-bold text-white">Impact Gravier</p>
+                              <p className="text-xs md:text-sm font-bold text-white">Impact Gravier</p>
                            </div>
                         </div>
                     </motion.div>
@@ -131,13 +131,13 @@ const LandingPage = ({ onStart }) => {
       </div>
 
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 p-8">
-        <div className="max-w-7xl mx-auto flex justify-between items-center bg-white/5 backdrop-blur-md px-10 py-5 rounded-[2rem] border border-white/10">
-          <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30">
-                <Zap size={20} fill="white" />
+      <nav className="fixed top-0 left-0 right-0 z-50 p-4 md:p-8">
+        <div className="max-w-7xl mx-auto flex justify-between items-center bg-white/5 backdrop-blur-md px-4 py-3 md:px-10 md:py-5 rounded-2xl md:rounded-[2rem] border border-white/10">
+          <div className="flex items-center gap-2 md:gap-3">
+             <div className="w-8 h-8 md:w-10 md:h-10 bg-primary-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/30">
+                <Zap className="w-4 h-4 md:w-5 md:h-5" fill="white" />
              </div>
-             <span className="text-2xl font-black uppercase italic tracking-tighter">Loca<span className="text-primary-500">Vision</span></span>
+             <span className="text-lg md:text-2xl font-black uppercase italic tracking-tighter">Loca<span className="text-primary-500">Vision</span></span>
           </div>
           <div className="hidden md:flex items-center gap-10 text-[10px] font-black uppercase tracking-widest text-gray-400">
              <a href="#features" className="hover:text-primary-500 transition-colors">Fonctionnalités</a>
@@ -145,38 +145,38 @@ const LandingPage = ({ onStart }) => {
              <a href="#saas" className="hover:text-primary-500 transition-colors">Solution SaaS</a>
           </div>
           <div className="flex items-center gap-4">
-             <button onClick={onStart} className="px-10 py-4 bg-primary-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-primary-700 transition-all shadow-xl flex items-center gap-2">
-                Connexion <ArrowRight size={16} />
+             <button onClick={onStart} className="px-4 py-2.5 md:px-10 md:py-4 bg-primary-600 text-white rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-primary-700 transition-all shadow-xl flex items-center gap-2">
+                Connexion <ArrowRight className="w-3 h-3 md:w-4 md:h-4" />
              </button>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-40 pb-20 px-8">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-20 items-center">
+      <section className="relative pt-28 pb-12 md:pt-40 md:pb-20 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-20 items-center">
           <motion.div
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 1 }}
-            className="space-y-10"
+            className="space-y-6 md:space-y-10"
           >
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600/10 border border-primary-600/20 rounded-full text-[10px] font-black uppercase tracking-[0.2em] text-primary-500">
                ✨ Alimenté par Gemini 2.0 Flash
             </div>
-            <h1 className="text-7xl md:text-8xl font-black uppercase italic italic tracking-tighter leading-[0.9]">
+            <h1 className="text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black uppercase italic tracking-tighter leading-[0.9]">
               L'avenir de la <br />
               <span className="text-primary-600">Location</span> est <br />
               Intelligent.
             </h1>
-            <p className="text-xl text-gray-400 font-medium max-w-lg leading-relaxed">
+            <p className="text-base md:text-xl text-gray-400 font-medium max-w-lg leading-relaxed">
               LocaVision transforme chaque inspection de véhicule en expertise scientifique. Automatisez vos processus de location de l'entrée à la sortie.
             </p>
-            <div className="flex flex-col sm:flex-row gap-6">
-               <button onClick={onStart} className="px-12 py-6 bg-primary-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-primary-700 hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary-500/40 flex items-center justify-center gap-3">
-                  Se connecter <ArrowRight size={18} />
+            <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
+               <button onClick={onStart} className="px-6 py-4 md:px-12 md:py-6 bg-primary-600 text-white rounded-xl md:rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-primary-700 hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary-500/40 flex items-center justify-center gap-3">
+                  Se connecter <ArrowRight className="w-4 h-4 md:w-5 md:h-5" />
                </button>
-               <a href="#demo" className="px-12 py-6 bg-white/5 border border-white/10 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-widest hover:bg-white/10 transition-all backdrop-blur-xl flex items-center justify-center">
+               <a href="#demo" className="px-6 py-4 md:px-12 md:py-6 bg-white/5 border border-white/10 text-white rounded-xl md:rounded-[1.5rem] font-black uppercase text-xs tracking-widest hover:bg-white/10 transition-all backdrop-blur-xl flex items-center justify-center">
                   Voir la démo technique
                </a>
             </div>
@@ -186,23 +186,23 @@ const LandingPage = ({ onStart }) => {
             initial={{ opacity: 0, scale: 0.8, rotateY: -20 }}
             animate={{ opacity: 1, scale: 1, rotateY: 0 }}
             transition={{ duration: 1.2 }}
-            className="relative"
+            className="relative mt-8 lg:mt-0"
           >
-            <div className="aspect-square bg-gradient-to-tr from-primary-600/20 to-blue-600/10 rounded-[3rem] border border-white/10 overflow-hidden relative shadow-2xl shadow-primary-500/10 p-1">
+            <div className="aspect-auto lg:aspect-square bg-gradient-to-tr from-primary-600/20 to-blue-600/10 rounded-2xl md:rounded-[3rem] border border-white/10 overflow-hidden relative shadow-2xl shadow-primary-500/10 p-1">
                <div className="absolute inset-0 bg-primary-600 opacity-5 mix-blend-overlay" />
-               <div className="w-full h-full bg-black/40 backdrop-blur-3xl p-12 flex items-center justify-center">
-                  <div className="grid grid-cols-2 gap-4 w-full h-full">
-                     <div className="bg-white/5 rounded-[2rem] border border-white/5 p-8 flex flex-col justify-end">
-                        <Camera size={32} className="text-primary-500 mb-4" />
+               <div className="w-full h-full bg-black/40 backdrop-blur-3xl p-6 md:p-12 flex items-center justify-center">
+                  <div className="grid grid-cols-2 gap-3 md:gap-4 w-full h-full">
+                     <div className="bg-white/5 rounded-xl md:rounded-[2rem] border border-white/5 p-4 md:p-8 flex flex-col justify-end">
+                        <Camera size={32} className="text-primary-500 mb-2 md:mb-4" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Scanner IA</span>
                      </div>
-                     <div className="bg-white/5 rounded-[2rem] border border-white/5 p-8 flex flex-col justify-end">
-                        <BarChart3 size={32} className="text-primary-500 mb-4" />
+                     <div className="bg-white/5 rounded-xl md:rounded-[2rem] border border-white/5 p-4 md:p-8 flex flex-col justify-end">
+                        <BarChart3 size={32} className="text-primary-500 mb-2 md:mb-4" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Analytique</span>
                      </div>
-                     <div className="col-span-2 bg-primary-600/10 rounded-[2rem] border border-primary-500/20 p-8 flex flex-col justify-end relative overflow-hidden group">
-                        <ShieldCheck size={48} className="text-primary-600 mb-6 group-hover:scale-110 transition-transform" />
-                        <h4 className="text-2xl font-black uppercase italic tracking-tighter">Sécurité 100%</h4>
+                     <div className="col-span-2 bg-primary-600/10 rounded-xl md:rounded-[2rem] border border-primary-500/20 p-6 md:p-8 flex flex-col justify-end relative overflow-hidden group">
+                        <ShieldCheck size={48} className="text-primary-600 mb-4 md:mb-6 group-hover:scale-110 transition-transform" />
+                        <h4 className="text-xl md:text-2xl font-black uppercase italic tracking-tighter">Sécurité 100%</h4>
                         <p className="text-xs text-gray-400 mt-2">Dossiers d'expertise cryptés et horodatés.</p>
                      </div>
                   </div>
@@ -213,22 +213,22 @@ const LandingPage = ({ onStart }) => {
             <motion.div 
               animate={{ y: [0, -10, 0] }}
               transition={{ repeat: Infinity, duration: 4 }}
-              className="absolute -top-12 -right-12 p-6 bg-black/80 backdrop-blur-2xl border border-white/10 rounded-[2rem] shadow-2xl"
+              className="absolute -top-6 -right-2 md:-top-12 md:-right-12 p-3 md:p-6 bg-black/80 backdrop-blur-2xl border border-white/10 rounded-xl md:rounded-[2rem] shadow-2xl"
             >
-               <Cpu size={24} className="text-emerald-500 mb-2" />
+               <Cpu className="text-emerald-500 mb-1 w-5 h-5 md:w-6 md:h-6" />
                <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Puissance IA</p>
-               <p className="text-lg font-black text-emerald-500 tracking-tighter">FLASH 2.0</p>
+               <p className="text-sm md:text-lg font-black text-emerald-500 tracking-tighter">FLASH 2.0</p>
             </motion.div>
           </motion.div>
         </div>
       </section>
 
       {/* Technical Demo Section */}
-      <section id="demo" className="py-32 px-8 relative">
-          <div className="max-w-7xl mx-auto text-center mb-20">
+      <section id="demo" className="py-16 md:py-32 px-4 md:px-8 relative">
+          <div className="max-w-7xl mx-auto text-center mb-10 md:mb-20">
              <div className="w-fit mx-auto px-4 py-2 bg-primary-600/10 rounded-full text-[10px] font-black uppercase tracking-widest text-primary-500 mb-6 border border-primary-600/20 tracking-[0.4em]">Live Showcase</div>
-             <h2 className="text-6xl font-black uppercase italic tracking-tighter mb-4 italic">Un Scanner <span className="text-primary-600">Omniscient</span></h2>
-             <p className="text-gray-400 font-medium max-w-xl mx-auto">Visualisez comment notre IA identifie instantanément les moindres défauts sur tout type de carrosserie.</p>
+             <h2 className="text-3xl sm:text-4xl md:text-6xl font-black uppercase italic tracking-tighter mb-4">Un Scanner <span className="text-primary-600">Omniscient</span></h2>
+             <p className="text-sm md:text-base text-gray-400 font-medium max-w-xl mx-auto">Visualisez comment notre IA identifie instantanément les moindres défauts sur tout type de carrosserie.</p>
           </div>
           <div className="max-w-4xl mx-auto">
              <DemoSimulation />
@@ -236,48 +236,48 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* Trust Section: Partners */}
-      <section className="py-20 border-y border-white/5 bg-white/[0.02]">
-         <div className="max-w-7xl mx-auto px-8 text-center">
-            <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-500 mb-12">Ils propulsent leur flotte avec LocaVision</p>
-            <div className="flex flex-wrap justify-center gap-12 lg:gap-24 opacity-40 grayscale hover:grayscale-0 transition-all">
-               <div className="text-2xl font-black italic tracking-tighter uppercase text-white">EuroRent</div>
-               <div className="text-2xl font-black italic tracking-tighter uppercase text-white">SwiftCar</div>
-               <div className="text-2xl font-black italic tracking-tighter uppercase text-white">EliteDrive</div>
-               <div className="text-2xl font-black italic tracking-tighter uppercase text-white">MetroMove</div>
+      <section className="py-10 md:py-20 border-y border-white/5 bg-white/[0.02] px-4 md:px-8">
+         <div className="max-w-7xl mx-auto text-center">
+            <p className="text-[10px] font-black uppercase tracking-[0.5em] text-gray-500 mb-6 md:mb-12">Ils propulsent leur flotte avec LocaVision</p>
+            <div className="flex flex-wrap justify-center gap-6 md:gap-12 lg:gap-24 opacity-40 grayscale hover:grayscale-0 transition-all">
+               <div className="text-lg md:text-2xl font-black italic tracking-tighter uppercase text-white">EuroRent</div>
+               <div className="text-lg md:text-2xl font-black italic tracking-tighter uppercase text-white">SwiftCar</div>
+               <div className="text-lg md:text-2xl font-black italic tracking-tighter uppercase text-white">EliteDrive</div>
+               <div className="text-lg md:text-2xl font-black italic tracking-tighter uppercase text-white">MetroMove</div>
             </div>
          </div>
       </section>
 
       {/* Workflow Section: How it works */}
-      <section id="ia" className="py-32 px-8 bg-white/5 border-y border-white/5 relative overflow-hidden">
+      <section id="ia" className="py-16 md:py-32 px-4 md:px-8 bg-white/5 border-y border-white/5 relative overflow-hidden">
         <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-20 items-center">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-20 items-center">
              <div className="text-left">
-                <h2 className="text-5xl font-black uppercase italic tracking-tighter mb-8 leading-tight">Le Futur de la Location <br /><span className="text-primary-600">en 3 étapes</span></h2>
-                <div className="space-y-12">
+                <h2 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter mb-6 md:mb-8 leading-tight">Le Futur de la Location <br /><span className="text-primary-600">en 3 étapes</span></h2>
+                <div className="space-y-8 md:space-y-12">
                    {[
                      { h: "Scan Instantané", p: "L'agent capture 4 photos clés du véhicule. Gemini 2.0 Flash analyse la carrosserie en 5ms pour identifier les dommages.", i: Camera },
                      { h: "Certification IA", p: "Le rapport d'expertise est généré avec détection automatique des rayures, chocs et zones saines.", i: Cpu },
                      { h: "Signature Sécurisée", p: "Le contrat PDF est créé instantanément et signé électroniquement sur tablette ou smartphone.", i: FileText }
                    ].map((step, idx) => (
-                     <div key={idx} className="flex gap-8 group text-left">
-                        <div className="shrink-0 w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center text-primary-500 border border-white/10 group-hover:bg-primary-600 group-hover:text-white transition-all shadow-xl">
-                           <step.i size={24} />
+                     <div key={idx} className="flex flex-col sm:flex-row gap-4 sm:gap-8 group text-left">
+                        <div className="shrink-0 w-12 h-12 md:w-16 md:h-16 bg-white/5 rounded-xl md:rounded-2xl flex items-center justify-center text-primary-500 border border-white/10 group-hover:bg-primary-600 group-hover:text-white transition-all shadow-xl">
+                           <step.i className="w-5 h-5 md:w-6 md:h-6" />
                         </div>
                         <div>
-                           <h4 className="text-xl font-black uppercase italic tracking-tight text-white mb-2">{step.h}</h4>
-                           <p className="text-gray-400 font-medium leading-relaxed">{step.p}</p>
+                           <h4 className="text-lg md:text-xl font-black uppercase italic tracking-tight text-white mb-2">{step.h}</h4>
+                           <p className="text-sm md:text-base text-gray-400 font-medium leading-relaxed">{step.p}</p>
                         </div>
                      </div>
                    ))}
                 </div>
              </div>
-             <div className="relative p-10 bg-gradient-to-br from-primary-600 to-indigo-600 rounded-[3rem] shadow-2xl overflow-hidden group">
+             <div className="relative p-6 md:p-10 bg-gradient-to-br from-primary-600 to-indigo-600 rounded-2xl md:rounded-[3rem] shadow-2xl overflow-hidden group mt-8 lg:mt-0">
                 <div className="absolute inset-0 bg-black/20 group-hover:opacity-0 transition-opacity" />
                 <img src="https://images.unsplash.com/photo-1550009158-9ebf69173e03?auto=format&fit=crop&q=80&w=1000" className="w-full rounded-2xl shadow-inner mix-blend-overlay opacity-40" alt="Tech Background" />
                 <div className="relative space-y-6">
                    <div className="w-fit px-4 py-2 bg-white/20 backdrop-blur-xl border border-white/30 rounded-xl text-[10px] font-black uppercase tracking-widest text-white italic">Interface Inspecteur v6.0</div>
-                   <div className="bg-black/60 backdrop-blur-2xl p-8 rounded-3xl border border-white/10 space-y-4">
+                   <div className="bg-black/60 backdrop-blur-2xl p-4 md:p-8 rounded-2xl md:rounded-3xl border border-white/10 space-y-4">
                       <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-primary-400"><span>Analyse Gemini en cours...</span> <span>89%</span></div>
                       <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} whileInView={{ width: '89%' }} className="h-full bg-primary-500" /></div>
                       <p className="text-sm font-medium text-gray-300">"Rayure détectée sur aile avant gauche. Profondeur: 1.2mm. Réparation estimée : 150€."</p>
@@ -289,13 +289,13 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* Features Grid */}
-      <section id="features" className="py-32 px-8">
-        <div className="max-w-7xl mx-auto text-center mb-20">
-          <h2 className="text-5xl font-black uppercase italic tracking-tighter mb-4">L'écosystème <span className="text-primary-600">Enterprise</span></h2>
-          <p className="text-gray-400 font-medium max-w-xl mx-auto">Une suite d'outils complète conçue pour l'efficacité opérationnelle et la croissance de votre réseau d'agences.</p>
+      <section id="features" className="py-16 md:py-32 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto text-center mb-10 md:mb-20">
+          <h2 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter mb-4">L'écosystème <span className="text-primary-600">Enterprise</span></h2>
+          <p className="text-sm md:text-base text-gray-400 font-medium max-w-xl mx-auto">Une suite d'outils complète conçue pour l'efficacité opérationnelle et la croissance de votre réseau d'agences.</p>
         </div>
         
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
           <FeatureCard 
             icon={Camera} 
             title="Inspection IA" 
@@ -336,13 +336,13 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* Pricing Section */}
-      <section id="saas" className="py-32 px-8">
-        <div className="max-w-7xl mx-auto text-center mb-24">
-           <h2 className="text-6xl font-black uppercase italic tracking-tighter mb-4 italic text-center text-white">Tarification <span className="text-primary-600">Enterprise</span></h2>
-           <p className="text-gray-400 font-medium max-w-xl mx-auto text-lg text-center">Des forfaits adaptés à la taille de votre flotte. Transparent. Sans engagement.</p>
+      <section id="saas" className="py-16 md:py-32 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto text-center mb-10 md:mb-24">
+           <h2 className="text-3xl md:text-6xl font-black uppercase italic tracking-tighter mb-4 text-center text-white">Tarification <span className="text-primary-600">Enterprise</span></h2>
+           <p className="text-sm md:text-lg text-gray-400 font-medium max-w-xl mx-auto text-center">Des forfaits adaptés à la taille de votre flotte. Transparent. Sans engagement.</p>
         </div>
 
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 text-left">
            {[
              { name: "Solo", price: "29", features: ["1 Agence inclus", "Jusqu'à 10 véhicules", "Scan IA standard", "Support email"], color: "bg-white/5", text: "text-white" },
              { name: "Agence", price: "79", features: ["3 Agences incluses", "Illimité véhicules", "Scan IA Prioritaire", "Multi-employés", "Dashboard Analytique"], color: "bg-primary-600", text: "text-white", popular: true },
@@ -351,25 +351,25 @@ const LandingPage = ({ onStart }) => {
              <motion.div 
                key={i} 
                whileHover={{ y: -10 }}
-               className={`p-12 rounded-[4rem] border border-white/10 relative overflow-hidden flex flex-col justify-between ${plan.color}`}
+               className={`p-6 md:p-12 rounded-2xl md:rounded-[4rem] border border-white/10 relative overflow-hidden flex flex-col justify-between ${plan.color}`}
              >
-                {plan.popular && <div className="absolute top-10 right-10 px-4 py-1 bg-white text-primary-600 rounded-full text-[9px] font-black uppercase tracking-widest text-center">Le plus populaire</div>}
+                {plan.popular && <div className="absolute top-6 right-6 md:top-10 md:right-10 px-4 py-1 bg-white text-primary-600 rounded-full text-[9px] font-black uppercase tracking-widest text-center">Le plus populaire</div>}
                 <div>
-                   <h4 className="text-2xl font-black uppercase italic mb-4 text-white">{plan.name}</h4>
-                   <div className="flex items-end gap-2 mb-10 text-white">
-                      <span className="text-6xl font-black italic tracking-tighter">{plan.price}€</span>
+                   <h4 className="text-xl md:text-2xl font-black uppercase italic mb-4 text-white">{plan.name}</h4>
+                   <div className="flex items-end gap-2 mb-6 md:mb-10 text-white">
+                      <span className="text-4xl md:text-6xl font-black italic tracking-tighter">{plan.price}€</span>
                       <span className="text-gray-400 font-medium italic mb-2">/mois</span>
                    </div>
                    <div className="space-y-4">
                       {plan.features.map((f, idx) => (
                         <div key={idx} className="flex gap-4 items-center">
                            <CheckCircle2 size={18} className={plan.popular ? "text-white" : "text-primary-600"} />
-                           <span className="text-sm font-medium opacity-80 text-white/80">{f}</span>
+                           <span className="text-xs md:text-sm font-medium opacity-80 text-white/80">{f}</span>
                         </div>
                       ))}
                    </div>
                 </div>
-                <button onClick={onStart} className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-widest mt-12 transition-all ${plan.popular ? 'bg-white text-primary-600 hover:bg-gray-100' : 'bg-primary-600 text-white hover:bg-primary-500 shadow-xl shadow-primary-500/20'}`}>
+                <button onClick={onStart} className={`w-full py-4 md:py-5 rounded-xl md:rounded-2xl font-black uppercase text-xs tracking-widest mt-8 md:mt-12 transition-all ${plan.popular ? 'bg-white text-primary-600 hover:bg-gray-100' : 'bg-primary-600 text-white hover:bg-primary-500 shadow-xl shadow-primary-500/20'}`}>
                    Se connecter
                 </button>
              </motion.div>
@@ -378,24 +378,24 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* Testimonials */}
-      <section className="py-32 px-8">
+      <section className="py-16 md:py-32 px-4 md:px-8">
          <div className="max-w-7xl mx-auto">
-            <div className="text-center mb-24">
-               <h2 className="text-6xl font-black uppercase italic tracking-tighter italic">L'Expérience <span className="text-primary-600">Utilisateur</span></h2>
+            <div className="text-center mb-10 md:mb-24">
+               <h2 className="text-3xl md:text-6xl font-black uppercase italic tracking-tighter text-center text-white">L'Expérience <span className="text-primary-600">Utilisateur</span></h2>
             </div>
-            <div className="grid md:grid-cols-3 gap-8 text-left">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 text-left">
                {[
                   { name: "Marc Lefebvre", role: "Directeur, AutoPlus Lyon", text: "LocaVision a réduit nos litiges de fin de contrat de 85%. L'IA ne manque jamais une rayure." },
                   { name: "Sophie Martin", role: "Gérante, CityRent", text: "La rapidité de Gemini 2.0 est bluffante. Une inspection complète prend désormais moins de 2 minutes." },
                   { name: "Julien Dubosc", role: "Resp. Flotte, Transp'Hertz", text: "L'interface est d'une clarté absolue. Mes agents ont adopté l'outil en une seule matinée." }
                ].map((t, i) => (
-                  <div key={i} className="p-10 bg-white/5 border border-white/10 rounded-[2.5rem] relative group">
-                     <div className="absolute top-8 left-8 text-primary-500 opacity-20 group-hover:opacity-100 transition-opacity">
-                        <Zap size={40} fill="currentColor" />
+                  <div key={i} className="p-6 md:p-10 bg-white/5 border border-white/10 rounded-2xl md:rounded-[2.5rem] relative group">
+                     <div className="absolute top-6 left-6 md:top-8 md:left-8 text-primary-500 opacity-20 group-hover:opacity-100 transition-opacity">
+                        <Zap className="w-8 h-8 md:w-10 md:h-10" fill="currentColor" />
                      </div>
-                     <p className="text-gray-300 font-medium leading-relaxed relative z-10 mt-8 mb-10">"{t.text}"</p>
+                     <p className="text-sm md:text-base text-gray-300 font-medium leading-relaxed relative z-10 mt-6 mb-8 md:mt-8 md:mb-10">"{t.text}"</p>
                      <div>
-                        <p className="font-black uppercase italic tracking-tighter text-white">{t.name}</p>
+                        <p className="text-base md:text-lg font-black uppercase italic tracking-tighter text-white">{t.name}</p>
                         <p className="text-[10px] font-bold text-primary-500 uppercase tracking-widest">{t.role}</p>
                      </div>
                   </div>
@@ -405,11 +405,11 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* CTA Final */}
-      <section className="py-40 px-8 relative overflow-hidden">
-        <div className="max-w-4xl mx-auto bg-gradient-to-br from-primary-900/40 to-primary-600 p-16 rounded-[4rem] text-center border border-white/20 shadow-2xl relative z-10">
-           <h2 className="text-5xl font-black uppercase italic tracking-tighter text-white mb-6">Prêt à moderniser votre flotte ?</h2>
-           <p className="text-white/80 text-xl font-medium mb-10 max-w-xl mx-auto">Rejoignez les agences de location qui font confiance à l'intelligence artificielle pour leur rentabilité.</p>
-           <button onClick={onStart} className="px-12 py-6 bg-white text-black rounded-[2rem] font-black uppercase text-sm tracking-[0.2em] hover:bg-black hover:text-white transition-all shadow-2xl active:scale-95">
+      <section className="py-20 md:py-40 px-4 md:px-8 relative overflow-hidden">
+        <div className="max-w-4xl mx-auto bg-gradient-to-br from-primary-900/40 to-primary-600 p-6 md:p-16 rounded-2xl md:rounded-[4rem] text-center border border-white/20 shadow-2xl relative z-10">
+           <h2 className="text-2xl sm:text-3xl md:text-5xl font-black uppercase italic tracking-tighter text-white mb-6">Prêt à moderniser votre flotte ?</h2>
+           <p className="text-white/80 text-base md:text-xl font-medium mb-6 md:mb-10 max-w-xl mx-auto">Rejoignez les agences de location qui font confiance à l'intelligence artificielle pour leur rentabilité.</p>
+           <button onClick={onStart} className="px-6 py-4 md:px-12 md:py-6 bg-white text-black rounded-xl md:rounded-[2rem] font-black uppercase text-xs md:text-sm tracking-[0.2em] hover:bg-black hover:text-white transition-all shadow-2xl active:scale-95">
               Se connecter 🚀
            </button>
         </div>
@@ -417,9 +417,9 @@ const LandingPage = ({ onStart }) => {
       </section>
 
       {/* Footer */}
-      <footer className="py-32 px-8 border-t border-white/5 bg-black/40 backdrop-blur-3xl">
+      <footer className="py-16 md:py-32 px-4 md:px-8 border-t border-white/5 bg-black/40 backdrop-blur-3xl">
         <div className="max-w-7xl mx-auto">
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-16 mb-20 text-left">
+           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 md:gap-16 mb-10 md:mb-20 text-left">
               <div className="col-span-1 md:col-span-1 space-y-6">
                  <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center shadow-lg shadow-primary-500/20"><Zap size={16} fill="white" /></div>
@@ -430,13 +430,13 @@ const LandingPage = ({ onStart }) => {
                  </p>
                  <div className="flex gap-4">
                     {[Twitter, Instagram, Linkedin].map((Icon, i) => (
-                      <Icon key={i} size={18} className="text-gray-600 hover:text-white transition-colors cursor-pointer" />
+                       <Icon key={i} size={18} className="text-gray-600 hover:text-white transition-colors cursor-pointer" />
                     ))}
                  </div>
               </div>
 
               <div>
-                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-8">Solution</h5>
+                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-4 md:mb-8">Solution</h5>
                  <ul className="space-y-4 text-xs font-bold text-gray-500">
                     <li className="hover:text-primary-500 transition-colors cursor-pointer">Scan Dommages IA</li>
                     <li className="hover:text-primary-500 transition-colors cursor-pointer">Gestion Mobilité</li>
@@ -445,7 +445,7 @@ const LandingPage = ({ onStart }) => {
               </div>
 
               <div>
-                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-8">Juridique</h5>
+                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-4 md:mb-8">Juridique</h5>
                  <ul className="space-y-4 text-xs font-bold text-gray-500">
                     <li className="hover:text-primary-500 transition-colors cursor-pointer">Mentions Légales</li>
                     <li className="hover:text-primary-500 transition-colors cursor-pointer">CGU & CGV</li>
@@ -454,8 +454,8 @@ const LandingPage = ({ onStart }) => {
               </div>
 
               <div>
-                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-8">Assistance</h5>
-                 <div className="p-6 bg-white/5 rounded-3xl border border-white/10 border-dashed">
+                 <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-4 md:mb-8">Assistance</h5>
+                 <div className="p-4 md:p-6 bg-white/5 rounded-2xl md:rounded-3xl border border-white/10 border-dashed">
                     <p className="text-[9px] font-black uppercase text-primary-500 mb-2 tracking-widest">Support Disponible</p>
                     <p className="text-white text-xs font-black">support@locavision.ai</p>
                     <p className="text-gray-600 text-[9px] mt-2 font-medium">Réponse en moins de 2h</p>
@@ -463,9 +463,9 @@ const LandingPage = ({ onStart }) => {
               </div>
            </div>
 
-           <div className="pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6">
+           <div className="pt-6 md:pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
               <p className="text-[9px] font-black uppercase text-gray-600 tracking-widest">© 2026 LocaVision SAS. Tous droits réservés. Fabriqué en France.</p>
-              <div className="flex items-center gap-8 text-[9px] font-black uppercase text-gray-600 tracking-widest">
+              <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8 text-[9px] font-black uppercase text-gray-600 tracking-widest">
                  <span className="flex items-center gap-2"><Globe size={10} /> Hébergé en Europe</span>
                  <span className="flex items-center gap-2"><ShieldCheck size={10} /> Conforme RGPD</span>
               </div>
