@@ -9,14 +9,15 @@ import {
   Clock,
   ArrowUpRight,
   Shield,
-  Gauge
+  Gauge,
+  Trash2
 } from 'lucide-react';
 import { getVehicles, createVehicle, updateVehicle, getVehicleDossier } from '../services/firestore';
-import { extractVehicleInfoFromPlate } from '../services/gemini';
+import { identifyVehicleFromPlateImage, fetchVehicleDataFromSIV } from '../services/plateService';
 import DamageHeatmap from '../components/DamageHeatmap';
 import CameraCapture from '../components/CameraCapture';
 
-const Vehicles = ({ currentAgency }) => {
+const Vehicles = ({ currentAgency, companyId }) => {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -92,6 +93,7 @@ const Vehicles = ({ currentAgency }) => {
       const cleanData = { 
         ...formData, 
         agencyId: currentAgency,
+        companyId: companyId,
         updatedAt: new Date() 
       };
       if (editingId) { 
@@ -363,7 +365,7 @@ const Vehicles = ({ currentAgency }) => {
                        }}
                        className="p-4 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all shadow-lg"
                      >
-                        <X size={24} />
+                        <Trash2 size={24} />
                      </button>
                   </div>
                </div>
@@ -409,7 +411,7 @@ const Vehicles = ({ currentAgency }) => {
 
                             <div className="bg-slate-50 dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-slate-800/50">
                                <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-8 flex items-center gap-3">
-                                  <Settings2 size={20} className="text-primary-600" /> Fiche Technique IA
+                                  <Settings2 size={20} className="text-primary-600" /> Fiche Technique
                                </h4>
                                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                                   {[
@@ -444,7 +446,7 @@ const Vehicles = ({ currentAgency }) => {
                                           <spec.icon size={16} />
                                           <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">{spec.label}</span>
                                        </div>
-                                       <p className="text-sm font-black text-gray-900 dark:text-white uppercase truncate">{spec.value}</p>
+                                       <div className="text-sm font-black text-gray-900 dark:text-white uppercase truncate">{spec.value}</div>
                                     </div>
                                   ))}
                                </div>
@@ -651,8 +653,9 @@ const Vehicles = ({ currentAgency }) => {
                           onClick={() => {
                             if (!lookupPlate) return;
                             setLookupStep('loading');
-                            extractVehicleInfoFromPlate(lookupPlate).then(res => {
-                              if (res.error) { setLookupStep('full_form'); } 
+                            // Utilise RapidAPI SIV pour la saisie texte
+                            fetchVehicleDataFromSIV(lookupPlate).then(res => {
+                              if (!res || !res.brand) { setLookupStep('full_form'); } 
                               else {
                                 setLookupResult(res);
                                 setFormData(prev => ({ ...prev, ...res, licensePlate: lookupPlate }));
@@ -675,7 +678,7 @@ const Vehicles = ({ currentAgency }) => {
                        </div>
                        <div className="text-center space-y-2">
                           <p className="font-black uppercase text-sm tracking-[0.3em] text-primary-600 animate-pulse">Extraction Technique...</p>
-                          <p className="text-xs text-gray-500 font-bold uppercase">Connexion aux bases de données Gemini 2.0 Flash</p>
+                          <p className="text-xs text-gray-500 font-bold uppercase">Connexion aux bases de données SIV</p>
                        </div>
                     </motion.div>
                   ) : lookupStep === 'confirm' ? (
@@ -853,16 +856,24 @@ const Vehicles = ({ currentAgency }) => {
             vehicleType="plaque"
             onClose={() => setShowCamera(false)}
             onCapture={(data) => {
+              setShowCamera(false);
               setScannedImage(data.image);
               setLookupStep('loading');
-              extractVehicleInfoFromPlate(data.image).then(res => {
-                if (res.error) { setLookupStep('full_form'); } 
-                else {
-                  setLookupResult(res);
-                  setFormData(prev => ({ ...prev, ...res }));
-                  setLookupStep('confirm');
-                }
-              }).catch(() => setLookupStep('full_form'));
+              setShowModal(true);
+              // Pipeline complet : PlateRecognizer → RapidAPI SIV → Gemini fallback
+              identifyVehicleFromPlateImage(data.image)
+                .then(({ source, plate, data: res }) => {
+                  console.info('[Vehicles] Identification via:', source, '| Plaque:', plate);
+                  if (!res || res.error || !res.brand) {
+                    setLookupStep('full_form');
+                  } else {
+                    setLookupResult(res);
+                    setLookupPlate(plate || res.licensePlate || '');
+                    setFormData(prev => ({ ...prev, ...res, licensePlate: plate || res.licensePlate || '' }));
+                    setLookupStep('confirm');
+                  }
+                })
+                .catch(() => setLookupStep('full_form'));
             }}
           />
         )}

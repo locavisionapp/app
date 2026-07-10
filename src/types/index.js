@@ -1,7 +1,21 @@
 export const USER_ROLES = {
-  ADMIN: 'admin',
-  AGENT: 'agent',
-  CLIENT: 'client'
+  SUPER_ADMIN: 'super_admin',       // Administrateur global
+  COMMERCIAL: 'commercial',         // Commercial de LocaVision
+  COMPANY_ADMIN: 'company_admin',   // Responsable de l'entreprise
+  COMPANY_AGENT: 'company_agent',   // Employé de l'entreprise (commercial interne)
+  CLIENT: 'client'                  // Client final (locataire)
+};
+
+export const SUBSCRIPTION_TYPES = {
+  MONTHLY: 'monthly',
+  YEARLY: 'yearly'
+};
+
+export const PAYMENT_STATUS = {
+  ACTIVE: 'active',
+  PENDING: 'pending',
+  OVERDUE: 'overdue',
+  CANCELLED: 'cancelled'
 };
 
 export const VEHICLE_STATUS = {
@@ -15,7 +29,8 @@ export const VEHICLE_CATEGORIES = {
   UTILITY: 'utilitaire',
   SEDAN: 'citadine',
   SUV: 'suv',
-  VAN: 'fourgon'
+  VAN: 'fourgon',
+  LUXURY: 'luxe'
 };
 
 export const INSPECTION_TYPES = {
@@ -37,4 +52,11 @@ export const DAMAGE_LOCATIONS = {
   RIGHT: 'right',
   ROOF: 'roof',
   INTERIOR: 'interior'
+};
+
+export const ALERT_TYPES = {
+  FINANCIAL: 'financial',
+  MAINTENANCE: 'maintenance',
+  TECHNICAL_CONTROL: 'technical_control',
+  SUBSCRIPTION: 'subscription'
 };

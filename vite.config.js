@@ -60,7 +60,37 @@ export default defineConfig({
   ],
   server: {
     port: 3000,
-    open: true
+    open: true,
+    proxy: {
+      // Proxy PlateRecognizer pour éviter CORS en dev
+      '/api/platerecognizer': {
+        target: 'https://api.platerecognizer.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/platerecognizer/, ''),
+        secure: true,
+      },
+      // Proxy RapidAPI SIV immatriculation pour éviter CORS en dev
+      '/api/rapidapi-immat': {
+        target: 'https://immatriculation.p.rapidapi.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/rapidapi-immat/, ''),
+        secure: true,
+      },
+      // Proxy RapidAPI checkcar pour éviter CORS en dev
+      '/api/rapidapi-checkcar': {
+        target: 'https://checkcar.p.rapidapi.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/rapidapi-checkcar/, ''),
+        secure: true,
+      },
+      // Nouveau Proxy pour la nouvelle API SIV
+      '/api/rapidapi-france': {
+        target: 'https://api-de-plaque-d-immatriculation-france.p.rapidapi.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/rapidapi-france/, ''),
+        secure: true,
+      },
+    }
   },
   build: {
     outDir: 'dist',

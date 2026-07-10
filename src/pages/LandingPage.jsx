@@ -120,7 +120,7 @@ const DemoSimulation = () => {
     );
 };
 
-const LandingPage = ({ onStart, onLogin }) => {
+const LandingPage = ({ onStart }) => {
   return (
     <div className="min-h-screen bg-black text-white selection:bg-primary-500/30 overflow-x-hidden">
       {/* Background Ambience */}
@@ -145,8 +145,9 @@ const LandingPage = ({ onStart, onLogin }) => {
              <a href="#saas" className="hover:text-primary-500 transition-colors">Solution SaaS</a>
           </div>
           <div className="flex items-center gap-4">
-             <button onClick={onLogin} className="text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-white transition-colors">Connexion</button>
-             <button onClick={onStart} className="px-8 py-3 bg-white text-black rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-primary-600 hover:text-white transition-all shadow-xl">S'inscrire</button>
+             <button onClick={onStart} className="px-10 py-4 bg-primary-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-primary-700 transition-all shadow-xl flex items-center gap-2">
+                Connexion <ArrowRight size={16} />
+             </button>
           </div>
         </div>
       </nav>
@@ -173,7 +174,7 @@ const LandingPage = ({ onStart, onLogin }) => {
             </p>
             <div className="flex flex-col sm:flex-row gap-6">
                <button onClick={onStart} className="px-12 py-6 bg-primary-600 text-white rounded-[2rem] font-black uppercase text-xs tracking-widest hover:bg-primary-700 hover:scale-105 active:scale-95 transition-all shadow-2xl shadow-primary-500/40 flex items-center justify-center gap-3">
-                  Démmarer maintenant <ArrowRight size={18} />
+                  Se connecter <ArrowRight size={18} />
                </button>
                <a href="#demo" className="px-12 py-6 bg-white/5 border border-white/10 text-white rounded-[1.5rem] font-black uppercase text-xs tracking-widest hover:bg-white/10 transition-all backdrop-blur-xl flex items-center justify-center">
                   Voir la démo technique
@@ -369,7 +370,7 @@ const LandingPage = ({ onStart, onLogin }) => {
                    </div>
                 </div>
                 <button onClick={onStart} className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-widest mt-12 transition-all ${plan.popular ? 'bg-white text-primary-600 hover:bg-gray-100' : 'bg-primary-600 text-white hover:bg-primary-500 shadow-xl shadow-primary-500/20'}`}>
-                   Choisir le forfait {plan.name}
+                   Se connecter
                 </button>
              </motion.div>
            ))}
@@ -409,7 +410,7 @@ const LandingPage = ({ onStart, onLogin }) => {
            <h2 className="text-5xl font-black uppercase italic tracking-tighter text-white mb-6">Prêt à moderniser votre flotte ?</h2>
            <p className="text-white/80 text-xl font-medium mb-10 max-w-xl mx-auto">Rejoignez les agences de location qui font confiance à l'intelligence artificielle pour leur rentabilité.</p>
            <button onClick={onStart} className="px-12 py-6 bg-white text-black rounded-[2rem] font-black uppercase text-sm tracking-[0.2em] hover:bg-black hover:text-white transition-all shadow-2xl active:scale-95">
-              Commencer l'aventure 🚀
+              Se connecter 🚀
            </button>
         </div>
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-primary-600/10 blur-[150px] pointer-events-none" />
@@ -446,9 +447,9 @@ const LandingPage = ({ onStart, onLogin }) => {
               <div>
                  <h5 className="text-[10px] font-black uppercase text-white tracking-[0.3em] mb-8">Juridique</h5>
                  <ul className="space-y-4 text-xs font-bold text-gray-500">
-                    <li onClick={() => onLogin?.('mentions')} className="hover:text-primary-500 transition-colors cursor-pointer">Mentions Légales</li>
-                    <li onClick={() => onLogin?.('cgu')} className="hover:text-primary-500 transition-colors cursor-pointer">CGU & CGV</li>
-                    <li onClick={() => onLogin?.('privacy')} className="hover:text-primary-500 transition-colors cursor-pointer">Protection Données (RGPD)</li>
+                    <li className="hover:text-primary-500 transition-colors cursor-pointer">Mentions Légales</li>
+                    <li className="hover:text-primary-500 transition-colors cursor-pointer">CGU & CGV</li>
+                    <li className="hover:text-primary-500 transition-colors cursor-pointer">Protection Données (RGPD)</li>
                  </ul>
               </div>
 

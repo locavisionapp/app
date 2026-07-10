@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, Plus, Search, Mail, Phone, Edit2, X, 
   MapPin, Star, History, AlertCircle, ShieldCheck, Briefcase, ChevronRight, Filter,
-  Fingerprint, CreditCard, Calendar as CalendarIcon, Home
+  Fingerprint, CreditCard, Calendar as CalendarIcon, Home,
+  Trash2, Upload, Download, Camera, FileText
 } from 'lucide-react';
 import { getClients, createClient, updateClient, getClientDossier } from '../services/firestore';
 
@@ -14,6 +15,7 @@ const Clients = ({ currentAgency }) => {
   const [showModal, setShowModal] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [dossier, setDossier] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
   
   // Advanced Filters
   const [showFilters, setShowFilters] = useState(false);
@@ -264,7 +266,7 @@ const Clients = ({ currentAgency }) => {
                      className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all shadow-sm"
                      title="Supprimer le client"
                    >
-                     <X size={24} />
+                     <Trash2 size={24} />
                    </button>
                    <button onClick={() => setSelectedClient(null)} className="p-3 bg-gray-50 dark:bg-gray-900 rounded-2xl hover:bg-gray-200 transition-all">
                      <Edit2 size={24} className="text-gray-400" />
@@ -272,53 +274,137 @@ const Clients = ({ currentAgency }) => {
                 </div>
               </div>
 
-              <div className="p-8 space-y-8">
-                 {/* ID Details Card */}
-                 <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
-                    <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-6 flex items-center gap-2">
-                       <ShieldCheck size={16} className="text-primary-600" /> Informations d'identité
-                    </h4>
-                    <div className="grid grid-cols-2 gap-6">
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Date de naissance</p>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CalendarIcon size={14}/> {dossier.birthDate || 'N/A'}</p>
+              {/* Tabs Navigation */}
+              <div className="flex gap-10 px-10 pt-8 border-b border-gray-100 dark:border-gray-700">
+                 {[
+                   { id: 'overview', label: 'Aperçu', icon: Users },
+                   { id: 'documents', label: 'Documents', icon: Briefcase },
+                   { id: 'history', label: 'Historique', icon: History }
+                 ].map(tab => {
+                   const Icon = tab.icon;
+                   return (
+                     <button
+                       key={tab.id}
+                       onClick={() => setActiveTab(tab.id)}
+                       className={`pb-4 border-b-4 font-black uppercase text-xs tracking-[0.2em] transition-all ${
+                         activeTab === tab.id
+                           ? 'border-primary-600 text-primary-600'
+                           : 'border-transparent text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                       }`}
+                     >
+                       <div className="flex items-center gap-2">
+                         <Icon size={16} />
+                         {tab.label}
                        </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Identité</p>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><Fingerprint size={14}/> {dossier.idNumber || 'N/A'}</p>
-                       </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Permis</p>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CreditCard size={14}/> {dossier.licenseNumber || 'N/A'}</p>
-                       </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lieu de résidence</p>
-                          <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><Home size={14}/> {dossier.city || 'N/A'}</p>
-                       </div>
-                    </div>
-                 </div>
+                     </button>
+                   );
+                 })}
+              </div>
 
-                 {/* History Sections */}
-                 <div className="space-y-8">
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                       <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-6 flex items-center gap-2">
-                          <Briefcase size={16} className="text-primary-600" /> Historique Locations
-                       </h4>
-                       <div className="space-y-4">
-                          {dossier.rentals?.length === 0 ? (
-                            <p className="text-xs font-bold text-gray-400 italic">Aucun contrat enregistré.</p>
-                          ) : dossier.rentals.map(rental => (
-                            <div key={rental.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl flex justify-between items-center border border-transparent hover:border-primary-100 transition-all">
-                               <div>
-                                  <p className="text-xs font-black uppercase">{rental.vehicleName}</p>
-                                  <p className="text-[10px] font-bold text-gray-400">{rental.startDate}</p>
-                               </div>
-                               <span className="text-[9px] font-black uppercase text-emerald-500 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-full">{rental.status}</span>
-                            </div>
-                          ))}
+              {/* Tab Content */}
+              <div className="p-8 space-y-8">
+                 {activeTab === 'overview' && (
+                   <div className="space-y-8">
+                     {/* ID Details Card */}
+                     <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                        <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-6 flex items-center gap-2">
+                           <ShieldCheck size={16} className="text-primary-600" /> Informations d'identité
+                        </h4>
+                        <div className="grid grid-cols-2 gap-6">
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Date de naissance</p>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CalendarIcon size={14}/> {dossier.birthDate || 'N/A'}</p>
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Identité</p>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><Fingerprint size={14}/> {dossier.idNumber || 'N/A'}</p>
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">N° Permis</p>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><CreditCard size={14}/> {dossier.licenseNumber || 'N/A'}</p>
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Lieu de résidence</p>
+                              <p className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2"><Home size={14}/> {dossier.city || 'N/A'}</p>
+                           </div>
+                        </div>
+                     </div>
+                   </div>
+                 )}
+
+                 {activeTab === 'documents' && (
+                   <div className="space-y-6">
+                     {/* Add Document Button */}
+                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                       <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-4">Ajouter un document</h4>
+                       <div className="grid grid-cols-2 gap-4">
+                         <button className="py-4 bg-primary-100 dark:bg-primary-900/30 text-primary-600 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-primary-200 transition-all flex items-center justify-center gap-2">
+                           <Upload size={16} />
+                           Importer un fichier
+                         </button>
+                         <button className="py-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
+                           <Camera size={16} />
+                           Prendre une photo
+                         </button>
                        </div>
-                    </div>
-                 </div>
+                     </div>
+
+                     {/* Document List */}
+                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700">
+                       <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-4">Documents existants</h4>
+                       <div className="space-y-3">
+                         {[
+                           { name: 'Permis de conduire', type: 'Identité', date: '12/05/2025' },
+                           { name: 'CNI - Recto', type: 'Identité', date: '12/05/2025' },
+                           { name: 'Contrat de location #12', type: 'Contrat', date: '15/04/2025' }
+                         ].map((doc, i) => (
+                           <div key={i} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-xl flex items-center justify-between">
+                             <div className="flex items-center gap-3">
+                               <div className="p-3 bg-primary-100 dark:bg-primary-900/30 rounded-lg">
+                                 <FileText size={20} className="text-primary-600" />
+                               </div>
+                               <div>
+                                 <p className="text-sm font-bold text-gray-900 dark:text-white">{doc.name}</p>
+                                 <p className="text-xs text-gray-400">{doc.type} • {doc.date}</p>
+                               </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                               <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                 <Download size={18} />
+                               </button>
+                               <button className="p-2 text-rose-500 hover:text-rose-600">
+                                 <Trash2 size={18} />
+                               </button>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   </div>
+                 )}
+
+                 {activeTab === 'history' && (
+                   <div className="space-y-8">
+                      <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                         <h4 className="text-xs font-black uppercase text-gray-400 tracking-[0.2em] mb-6 flex items-center gap-2">
+                            <Briefcase size={16} className="text-primary-600" /> Historique Locations
+                         </h4>
+                         <div className="space-y-4">
+                            {dossier.rentals?.length === 0 ? (
+                              <p className="text-xs font-bold text-gray-400 italic">Aucun contrat enregistré.</p>
+                            ) : dossier.rentals.map(rental => (
+                              <div key={rental.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl flex justify-between items-center border border-transparent hover:border-primary-100 transition-all">
+                                 <div>
+                                    <p className="text-xs font-black uppercase">{rental.vehicleName}</p>
+                                    <p className="text-[10px] font-bold text-gray-400">{rental.startDate}</p>
+                                 </div>
+                                 <span className="text-[9px] font-black uppercase text-emerald-500 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-full">{rental.status}</span>
+                              </div>
+                            ))}
+                         </div>
+                      </div>
+                   </div>
+                 )}
               </div>
             </motion.div>
           </div>

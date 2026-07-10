@@ -19,49 +19,58 @@ import {
   X,
   FileText,
   RefreshCcw,
-  Download
+  Download,
+  Building2,
+  UserCircle,
+  Settings
 } from 'lucide-react';
-import { getFleetAnalytics as getAnalytics, getInspections as getRecentInspections, getVehicles, seedDatabase } from "../services/firestore";
+import { subscribeToVehicles, subscribeToInspections, subscribeToCompanies, subscribeToCommercials, subscribeToLogs, computeFleetAnalytics } from '../services/firestore';
 import DamageHeatmap from '../components/DamageHeatmap';
 import ComparisonView from '../components/ComparisonView';
 
-const Dashboard = ({ setCurrentPage, setPageData, activeAgency }) => {
+const Dashboard = ({ setCurrentPage, setPageData, activeAgency, profile }) => {
   const [analytics, setAnalytics] = useState(null);
   const [recentInspections, setRecentInspections] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [commercials, setCommercials] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [comparisonTarget, setComparisonTarget] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, [activeAgency?.id]);
-
-  const loadData = async () => {
     setLoading(true);
-    try {
-      const agencyId = activeAgency?.id;
-      const [stats, inspections, cars] = await Promise.all([
-        getAnalytics(agencyId),
-        getRecentInspections(null, agencyId),
-        getVehicles(agencyId)
-      ]);
-      setAnalytics(stats);
-      setRecentInspections(inspections);
-      setVehicles(cars);
-    } catch (error) {
-      console.error("Erreur chargement dashboard:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    let unsubVehicles, unsubInspections, unsubCompanies, unsubCommercials, unsubLogs;
 
-  const handleSeed = async () => {
-    if (window.confirm("Générer des données de démonstration ?")) {
-      await seedDatabase();
-      loadData();
+    if (profile?.role === 'super_admin') {
+      unsubVehicles = subscribeToVehicles({}, (cars) => {
+        setVehicles(cars);
+        setAnalytics(computeFleetAnalytics(cars));
+        setLoading(false);
+      });
+      unsubInspections = subscribeToInspections({}, (insps) => setRecentInspections(insps));
+      unsubCompanies = subscribeToCompanies((comps) => setCompanies(comps));
+      unsubCommercials = subscribeToCommercials((comms) => setCommercials(comms));
+      unsubLogs = subscribeToLogs(100, (logList) => setLogs(logList));
+    } else {
+      const filters = activeAgency?.id ? { agencyId: activeAgency.id } : {};
+      unsubVehicles = subscribeToVehicles(filters, (cars) => {
+        setVehicles(cars);
+        setAnalytics(computeFleetAnalytics(cars));
+        setLoading(false);
+      });
+      unsubInspections = subscribeToInspections(filters, (insps) => setRecentInspections(insps));
     }
-  };
+
+    return () => {
+      if (unsubVehicles) unsubVehicles();
+      if (unsubInspections) unsubInspections();
+      if (unsubCompanies) unsubCompanies();
+      if (unsubCommercials) unsubCommercials();
+      if (unsubLogs) unsubLogs();
+    };
+  }, [activeAgency?.id, profile?.role]);
 
   const handleVehicleClick = (vehicle) => {
     setSelectedVehicle(vehicle);
@@ -195,6 +204,180 @@ const Dashboard = ({ setCurrentPage, setPageData, activeAgency }) => {
     );
   }
 
+  if (profile?.role === 'super_admin') {
+    return (
+      <div className="pt-4 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto pb-20">
+        {/* Super Admin Welcome Hero */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="relative mb-12 p-10 rounded-[3rem] bg-gradient-to-br from-slate-900 to-primary-950 border border-white/10 shadow-2xl overflow-hidden"
+        >
+          <div className="absolute top-0 right-0 w-1/2 h-full opacity-10 pointer-events-none">
+             <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <path d="M0 0 L100 0 L100 100 Z" fill="currentColor" className="text-primary-500" />
+             </svg>
+          </div>
+          
+          <div className="relative z-10 grid lg:grid-cols-2 gap-12 items-center">
+             <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary-500/20 text-primary-400 rounded-lg text-[9px] font-black uppercase tracking-widest mb-6 border border-primary-500/30">
+                   <Activity size={12} className="animate-pulse" /> Super Admin - LocaVision Global
+                </div>
+                <h1 className="text-5xl md:text-6xl font-black text-white tracking-tighter italic leading-none mb-6">
+                  Centre de Contrôle <span className="text-primary-500">LocaVision</span>
+                </h1>
+                <p className="text-slate-400 font-medium text-lg leading-relaxed max-w-lg">
+                  Vue d'ensemble globale de la plateforme. Gérez les commerciaux, les entreprises et surveillez la santé du système.
+                </p>
+             </div>
+             
+             <div className="grid grid-cols-2 gap-4">
+                <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/5 rounded-[2rem] flex flex-col justify-end">
+                   <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Entreprises Actives</p>
+                   <p className="text-3xl font-black italic text-emerald-500">{companies.length}</p>
+                </div>
+                <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/5 rounded-[2rem] flex flex-col justify-end">
+                   <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Commerciaux</p>
+                   <p className="text-3xl font-black italic text-primary-500">{commercials.length}</p>
+                </div>
+                <div className="col-span-2 p-6 bg-primary-500/10 border border-primary-500/20 rounded-[2rem] flex items-center justify-between">
+                   <div>
+                      <p className="text-[10px] font-black uppercase text-primary-500 mb-1">Status Système</p>
+                      <p className="text-xl font-black text-white italic">Opérationnel</p>
+                   </div>
+                   <div className="px-4 py-2 bg-emerald-600 rounded-xl text-[10px] font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    Online
+                   </div>
+                </div>
+             </div>
+          </div>
+        </motion.div>
+
+        {/* Super Admin Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-12">
+          <StatCard title="Total Entreprises" value={companies.length} icon={Building2} color="blue" delay={0.1} />
+          <StatCard title="Total Commerciaux" value={commercials.length} icon={UserCircle} color="green" delay={0.2} />
+          <StatCard title="Total Véhicules" value={analytics?.totalVehicles || 0} icon={Car} color="indigo" delay={0.3} />
+          <StatCard title="Taux Occupation" value={`${analytics?.occupancyRate || 0}%`} icon={Activity} color="red" delay={0.4} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Commerciaux List */}
+          <div className="lg:col-span-2 space-y-8">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Commerciaux</h2>
+                <button onClick={() => setCurrentPage('commercials')} className="text-primary-600 hover:text-primary-700 text-sm font-medium">Gérer</button>
+              </div>
+              <div className="p-6 space-y-4">
+                {commercials.slice(0, 5).map((comm) => (
+                  <div key={comm.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-xl flex items-center justify-center text-primary-600">
+                        <UserCircle size={20} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 dark:text-white">{comm.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{comm.email}</p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 text-xs font-bold rounded-full ${comm.status === 'Actif' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {comm.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Activity Logs */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Journal d'activité</h2>
+                <button onClick={() => setCurrentPage('logs')} className="text-primary-600 hover:text-primary-700 text-sm font-medium">Voir tout</button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  {logs.slice(0, 5).map((log) => (
+                    <div key={log.id} className="flex items-center space-x-4">
+                      <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <FileText className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{log.action}</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">Utilisateur: {log.user}</p>
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {log.date} {log.time}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions Panel */}
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Actions Rapides</h2>
+              </div>
+              <div className="p-6 space-y-3">
+                <button 
+                  onClick={() => setCurrentPage('commercials')}
+                  className="w-full btn-primary flex items-center justify-center space-x-2"
+                >
+                  <UserCircle className="w-4 h-4" /> <span>Gérer Commerciaux</span>
+                </button>
+                <button 
+                  onClick={() => setCurrentPage('companies')}
+                  className="w-full btn-secondary flex items-center justify-center space-x-2"
+                >
+                  <Building2 className="w-4 h-4" /> <span>Gérer Entreprises</span>
+                </button>
+                <button 
+                  onClick={() => setCurrentPage('logs')}
+                  className="w-full btn-secondary flex items-center justify-center space-x-2"
+                >
+                  <FileText className="w-4 h-4" /> <span>Voir Logs</span>
+                </button>
+                <button 
+                  onClick={() => setCurrentPage('settings')}
+                  className="w-full btn-secondary flex items-center justify-center space-x-2"
+                >
+                  <Settings className="w-4 h-4" /> <span>Paramètres Système</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Platform Health */}
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Santé Plateforme</h2>
+              </div>
+              <div className="p-6 space-y-3">
+                <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Serveur</span>
+                  <span className="text-sm font-bold text-emerald-600">OK</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Base de données</span>
+                  <span className="text-sm font-bold text-emerald-600">OK</span>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Stockage</span>
+                  <span className="text-sm font-bold text-yellow-600">75%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pt-4 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto pb-20">
       {/* Welcome Hero / "Vrai Page d'accueil" du Dashboard */}
@@ -224,12 +407,12 @@ const Dashboard = ({ setCurrentPage, setPageData, activeAgency }) => {
            
            <div className="grid grid-cols-2 gap-4">
               <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/5 rounded-[2rem] flex flex-col justify-end">
-                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Santé Moyenne</p>
-                 <p className="text-3xl font-black italic text-emerald-500">9.2/10</p>
+                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Taux d'Occupation</p>
+                 <p className="text-3xl font-black italic text-emerald-500">{analytics?.occupancyRate || 0}%</p>
               </div>
               <div className="p-6 bg-white/5 backdrop-blur-xl border border-white/5 rounded-[2rem] flex flex-col justify-end">
-                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Inspections IA (24h)</p>
-                 <p className="text-3xl font-black italic text-primary-500">+14</p>
+                 <p className="text-[10px] font-black uppercase text-slate-500 mb-2">Véhicules Disponibles</p>
+                 <p className="text-3xl font-black italic text-primary-500">{analytics?.availableVehicles || 0}</p>
               </div>
               <div className="col-span-2 p-6 bg-primary-500/10 border border-primary-500/20 rounded-[2rem] flex items-center justify-between">
                  <div>
@@ -254,11 +437,7 @@ const Dashboard = ({ setCurrentPage, setPageData, activeAgency }) => {
           </h2>
         </div>
         <div className="flex items-center gap-3">
-           <button onClick={handleSeed} className="p-4 glass-card rounded-xl hover:bg-primary-600 hover:text-white transition-all group overflow-hidden relative border border-slate-200 dark:border-white/10 shadow-sm">
-              <div className="relative z-10 flex items-center gap-2 text-xs font-black uppercase">
-                 <RefreshCcw size={18} className="group-hover:rotate-180 transition-transform duration-500" /> Données Démo
-              </div>
-           </button>
+
            <button className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:scale-105 active:scale-95 transition-all">
               Générer Rapport
            </button>

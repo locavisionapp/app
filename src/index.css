@@ -95,4 +95,12 @@
   .custom-scrollbar::-webkit-scrollbar-thumb {
     @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors;
   }
+  
+  /* Fix select text color */
+  select {
+    @apply text-slate-900 dark:text-slate-100;
+  }
+  select option {
+    @apply bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100;
+  }
 }

@@ -15,29 +15,45 @@ import {
   Layers,
   Circle
 } from 'lucide-react';
-import { getAdvancedStats } from '../services/firestore';
+import { subscribeToVehicles, subscribeToRentals, subscribeToClients, computeAdvancedStats } from '../services/firestore';
 
-const Analytics = () => {
+const Analytics = ({ currentAgency, companyId }) => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState(localStorage.getItem('locavision_user_role') || 'Administrateur');
 
   useEffect(() => {
-    loadStats();
-    // Simulate real-time updates every 30 seconds
-    const interval = setInterval(loadStats, 30000);
-    return () => clearInterval(interval);
-  }, [userRole]);
+    setLoading(true);
+    const filters = {};
+    if (currentAgency) {
+      filters.agencyId = currentAgency;
+    } else if (companyId) {
+      filters.companyId = companyId;
+    }
 
-  const loadStats = async () => {
-    try {
-      const data = await getAdvancedStats(userRole);
-      setStats(data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  };
+    let currentVehicles = null;
+    let currentRentals = null;
+    let currentClients = null;
 
-  const isAdmin = userRole === 'Administrateur';
+    const updateStats = () => {
+      if (currentVehicles && currentRentals && currentClients) {
+        setStats(computeAdvancedStats(currentVehicles, currentRentals, currentClients, userRole));
+        setLoading(false);
+      }
+    };
+
+    const unsubV = subscribeToVehicles(filters, (v) => { currentVehicles = v; updateStats(); });
+    const unsubR = subscribeToRentals(filters, (r) => { currentRentals = r; updateStats(); });
+    const unsubC = subscribeToClients(filters, (c) => { currentClients = c; updateStats(); });
+
+    return () => {
+      unsubV();
+      unsubR();
+      unsubC();
+    };
+  }, [userRole, currentAgency, companyId]);
+
+  const isAdmin = ['super_admin', 'Administrateur', 'company_admin', 'company_agent'].includes(userRole);
 
   if (loading || !stats) {
     return (
@@ -146,8 +162,8 @@ const Analytics = () => {
           
           <div className="h-64 mt-12 relative">
              <CustomLineChart 
-              data={isAdmin ? stats.revenue.history : [
-                {name: 'Jan', val: 12}, {name: 'Fév', val: 18}, {name: 'Mar', val: 26}, {name: 'Avr', val: stats.activeRentals}
+              data={stats.revenue?.history?.length > 0 ? stats.revenue.history : [
+                {name: '-', val: 0}, {name: '-', val: 0}, {name: '-', val: 0}, {name: '-', val: 0}
               ]} 
               color="#d946ef" 
              />
