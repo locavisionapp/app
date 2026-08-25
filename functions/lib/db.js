@@ -1,10 +1,20 @@
-const { initializeApp, getApps } = require('firebase-admin/app')
+const { initializeApp, getApps, cert } = require('firebase-admin/app')
 const { getFirestore, FieldValue } = require('firebase-admin/firestore')
 const { getAuth } = require('firebase-admin/auth')
 const { getStorage } = require('firebase-admin/storage')
 
 if (!getApps().length) {
-  initializeApp()
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
+    // Environnements sans identifiants ambiants (Vercel...) : credentials explicites.
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
+    initializeApp({
+      credential: cert(serviceAccount),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    })
+  } else {
+    // Cloud Functions / émulateurs : identifiants ambiants automatiques.
+    initializeApp()
+  }
 }
 
 const db = getFirestore()

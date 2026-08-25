@@ -1,0 +1,34 @@
+const express = require('express')
+const cors = require('cors')
+const { db } = require('./lib/db')
+const { authenticate } = require('./lib/auth')
+const { logUsage } = require('./lib/usage')
+
+const vehiclesRoutes = require('./routes/vehicles')
+const companiesRoutes = require('./routes/companies')
+
+// App Express partagée : montée sur Firebase Cloud Functions (index.js) et
+// sur les fonctions serverless Vercel (../api/v1/[...path].cjs).
+const app = express()
+app.use(cors({ origin: true }))
+app.use(express.json({ limit: '15mb' }))
+
+const v1 = express.Router()
+v1.use(authenticate, logUsage)
+
+v1.get('/me', async (req, res) => {
+  const { role, companyId, uid } = req.auth
+  let companyName = null
+  if (companyId) {
+    const doc = await db.collection('companies').doc(companyId).get()
+    companyName = doc.data()?.name || null
+  }
+  res.json({ role, companyId, companyName, uid })
+})
+
+v1.use(vehiclesRoutes)
+v1.use(companiesRoutes)
+
+app.use('/v1', v1)
+
+module.exports = app

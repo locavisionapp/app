@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "https://europe-west1-locavision-13692.cloudfunctions.net/api/v1/:path*" },
+    { "source": "/v1/:path*", "destination": "/api/v1/:path*" },
     { "source": "/:path*", "destination": "/index.html" }
   ]
 }
