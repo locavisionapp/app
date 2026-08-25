@@ -5,14 +5,15 @@ const { getStorage } = require('firebase-admin/storage')
 
 if (!getApps().length) {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
-    // Environnements sans identifiants ambiants (Vercel...) : credentials explicites.
+    // Environments with no ambient Google credentials (Vercel, etc.):
+    // initialize with an explicit service account.
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)
     initializeApp({
       credential: cert(serviceAccount),
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     })
   } else {
-    // Cloud Functions / émulateurs : identifiants ambiants automatiques.
+    // Cloud Functions / emulators: ambient credentials are auto-detected.
     initializeApp()
   }
 }

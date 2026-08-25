@@ -1,8 +1,8 @@
 rules_version = '2';
 
-// Les photos d'inspection sont écrites par Cloud Functions (Admin SDK, qui
-// ignore ces règles) et servies en lecture via leur URL publique GCS.
-// Le client n'utilise jamais le SDK Storage directement.
+// Inspection photos are written by the API (Admin SDK, which bypasses these
+// rules) and served for reading via their public GCS URL. The client never
+// uses the Storage SDK directly.
 service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {

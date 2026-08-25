@@ -1,5 +1,5 @@
-// Catalogue des catégories de véhicules et de leur parcours de capture guidé.
-// Chaque étape a une instruction courte affichée à l'écran pendant que la caméra est ouverte.
+// Catalog of vehicle categories and their guided capture walkthrough.
+// Each step has a short on-screen instruction shown while the camera is open.
 
 const EXTERIOR_360 = [
   { id: 'front', label: 'Avant', instruction: 'Placez-vous face au véhicule, à environ 2 mètres.' },

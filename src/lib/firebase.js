@@ -1,9 +1,9 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
 
-// Uniquement la configuration publique Firebase (identité). Toutes les données
-// (véhicules, inspections, tarifs...) transitent par l'API Cloud Functions,
-// jamais directement par le SDK client — voir src/lib/api.js.
+// Public Firebase config only (identity). All data (vehicles, inspections,
+// pricing...) flows through the API — never the client SDK directly.
+// See src/lib/api.js.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -16,9 +16,9 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 
-// En local, on se branche sur les émulateurs Firebase (voir `npm run functions:serve`)
-// pour tester avec les comptes de démo créés par functions/scripts/seed.js,
-// sans jamais toucher au vrai projet Firebase.
+// Locally, connect to the Firebase emulators (see `npm run functions:serve`)
+// to test with the demo accounts created by functions/scripts/seed.js,
+// without ever touching the real Firebase project.
 if (import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
 }

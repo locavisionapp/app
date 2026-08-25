@@ -9,9 +9,9 @@ import { getCategorySteps } from '../../config/vehicleCategories'
 import { api } from '../../lib/api'
 
 /**
- * Parcours guidé : capture une photo par étape (adaptée au type de véhicule),
- * avec validation IA immédiate du cadrage, puis envoie le lot complet pour
- * l'analyse globale des dégâts.
+ * Guided walkthrough: captures one photo per step (adapted to the vehicle
+ * type), with immediate AI framing validation, then submits the full batch
+ * for the global damage analysis.
  */
 export function GuidedInspection({ vehicleId, categoryId, onComplete }) {
   const steps = getCategorySteps(categoryId)
@@ -40,7 +40,7 @@ export function GuidedInspection({ vehicleId, categoryId, onComplete }) {
         return
       }
     } catch (e) {
-      // La validation en direct est un confort : si elle échoue, on n'empêche pas de continuer.
+      // Live validation is a UX nicety: if it fails, don't block the user from continuing.
     }
     setChecking(false)
     const next = [...captures, { stepId: step.id, label: step.label, image }]

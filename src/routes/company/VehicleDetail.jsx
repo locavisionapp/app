@@ -13,9 +13,11 @@ import { api } from '../../lib/api'
 export default function VehicleDetail() {
   const { id } = useParams()
   const [vehicle, setVehicle] = useState(null)
+  const [agencies, setAgencies] = useState([])
   const [inspections, setInspections] = useState(null)
   const [dailyRate, setDailyRate] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savingAgency, setSavingAgency] = useState(false)
 
   useEffect(() => {
     api.getVehicle(id).then((v) => {
@@ -23,6 +25,7 @@ export default function VehicleDetail() {
       setDailyRate(v.pricing?.dailyRate ?? '')
     })
     api.listInspections(id).then(setInspections).catch(() => setInspections([]))
+    api.listAgencies().then(setAgencies).catch(() => setAgencies([]))
   }, [id])
 
   async function savePricing() {
@@ -33,6 +36,16 @@ export default function VehicleDetail() {
       setVehicle(updated)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function saveAgency(agencyId) {
+    setSavingAgency(true)
+    try {
+      const updated = await api.updateVehicleAgency(id, agencyId || null)
+      setVehicle(updated)
+    } finally {
+      setSavingAgency(false)
     }
   }
 
@@ -49,6 +62,24 @@ export default function VehicleDetail() {
       <Button as={Link} to="/app/scan" className="w-full">
         <ScanLine size={18} /> Lancer une nouvelle inspection
       </Button>
+
+      <Card className="space-y-3 p-4">
+        <p className="text-sm font-semibold text-slate-700">Agence</p>
+        <div className="flex items-center gap-3">
+          <select
+            className="h-11 flex-1 rounded-xl border border-slate-300 px-3 text-sm"
+            value={vehicle.agencyId || ''}
+            disabled={savingAgency}
+            onChange={(e) => saveAgency(e.target.value)}
+          >
+            <option value="">Aucune agence</option>
+            {agencies.map((a) => (
+              <option key={a.id} value={a.id}>{a.name} ({a.city})</option>
+            ))}
+          </select>
+          {savingAgency && <Spinner size={16} />}
+        </div>
+      </Card>
 
       <Card className="space-y-3 p-4">
         <p className="text-sm font-semibold text-slate-700">Tarif de location</p>

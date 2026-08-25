@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// En dev, on proxy vers l'émulateur Firebase Hosting (voir firebase.json),
-// qui applique la même réécriture "/v1/**" -> Cloud Function "api" qu'en prod.
+// In dev, proxy to the Firebase Hosting emulator (see firebase.json), which
+// applies the same "/v1/**" -> API function rewrite as production.
 const FUNCTIONS_EMULATOR_TARGET = process.env.VITE_HOSTING_EMULATOR_URL || 'http://127.0.0.1:5000'
 
 export default defineConfig({
@@ -34,7 +34,7 @@ export default defineConfig({
     port: 3000,
     open: true,
     proxy: {
-      // Toutes les données transitent par l'API publique (Cloud Functions), jamais par des clés côté client.
+      // Every data call goes through the public API — never a client-side key.
       '/v1': {
         target: FUNCTIONS_EMULATOR_TARGET,
         changeOrigin: true,
@@ -44,5 +44,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // Split rarely-changing vendor code from app code so a deploy only
+        // busts the cache for what actually changed, and the initial paint
+        // doesn't wait on the whole dependency graph.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth'],
+          'vendor-motion': ['framer-motion'],
+        },
+      },
+    },
   },
 })

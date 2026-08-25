@@ -10,10 +10,10 @@ function generateApiKey() {
 }
 
 /**
- * Résout l'appelant à partir du header Authorization :
- * - `Bearer sk_live_...`  -> clé API d'entreprise (CRM tiers)
- * - `Bearer <idToken>`    -> utilisateur Firebase Auth (app web LocaVision)
- * Attache req.auth = { uid, role, companyId, via }.
+ * Resolves the caller from the Authorization header:
+ * - `Bearer sk_live_...` -> company API key (third-party CRM integration)
+ * - `Bearer <idToken>`   -> Firebase Auth user (LocaVision web app)
+ * Attaches req.auth = { uid, role, companyId, via }.
  */
 async function authenticate(req, res, next) {
   const header = req.headers.authorization || ''

@@ -1,8 +1,8 @@
 rules_version = '2';
 
-// Toutes les données transitent par l'API Cloud Functions (Admin SDK, qui
-// ignore ces règles). Le client web n'utilise jamais le SDK Firestore
-// directement : on ferme donc l'accès direct par défaut.
+// All data flows through the API (Admin SDK, which bypasses these rules).
+// The web client never uses the Firestore SDK directly, so direct access
+// is closed by default.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {

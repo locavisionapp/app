@@ -1,10 +1,10 @@
-// Fonction serverless Vercel (chemin fixe, pas de route dynamique) : sert
-// l'API publique /v1/** sans dépendre de Firebase Cloud Functions (plan
-// Blaze non requis). Le sous-chemin est passé en query string par
-// vercel.json (les routes catch-all [...path] de Vercel ne gèrent pas
-// correctement les chemins à plusieurs segments sous le preset Vite),
-// puis reconstruit ici avant d'être transmis à l'app Express partagée
-// (functions/app.js, CommonJS, importée en ESM par interop Node standard).
+// Vercel serverless function (fixed path, no dynamic route): serves the
+// public /v1/** API without depending on Firebase Cloud Functions (no Blaze
+// plan required). The sub-path is passed as a query string parameter by
+// vercel.json — Vercel's [...path] catch-all routes don't correctly handle
+// multi-segment paths under the Vite preset — then reconstructed here
+// before being handed to the shared Express app (functions/app.js,
+// CommonJS, imported via standard Node ESM/CJS interop).
 import app from '../functions/app.js'
 
 export default function handler(req, res) {

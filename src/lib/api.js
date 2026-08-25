@@ -1,7 +1,8 @@
 import { auth } from './firebase'
 
-// Base vide = les appels passent par le proxy Vite "/v1" (dev) ou par le même
-// domaine en prod (Firebase Hosting réécrit /v1/** vers les Cloud Functions).
+// Empty base = calls go through the Vite "/v1" proxy (dev) or the same
+// domain in prod (the Vercel/Firebase Hosting rewrite forwards /v1/** to
+// the API function).
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 class ApiError extends Error {
@@ -40,21 +41,34 @@ export async function apiFetch(path, { method = 'GET', body, headers } = {}) {
   return data
 }
 
+function toQueryString(params) {
+  const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== ''))
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
 export const api = {
   me: () => apiFetch('/v1/me'),
 
   scanPlate: (imageBase64) => apiFetch('/v1/scan-plate', { method: 'POST', body: { image: imageBase64 } }),
 
-  listVehicles: () => apiFetch('/v1/vehicles'),
+  listVehicles: (filters = {}) => apiFetch(`/v1/vehicles${toQueryString(filters)}`),
   createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle }),
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
   updateVehiclePricing: (id, pricing) => apiFetch(`/v1/vehicles/${id}/pricing`, { method: 'PUT', body: pricing }),
+  updateVehicleAgency: (id, agencyId) => apiFetch(`/v1/vehicles/${id}/agency`, { method: 'PUT', body: { agencyId } }),
 
   listInspections: (vehicleId) => apiFetch(`/v1/vehicles/${vehicleId}/inspections`),
   validateCaptureStep: (vehicleId, payload) => apiFetch(`/v1/vehicles/${vehicleId}/inspections/validate-step`, { method: 'POST', body: payload }),
   submitInspection: (vehicleId, payload) => apiFetch(`/v1/vehicles/${vehicleId}/inspections`, { method: 'POST', body: payload }),
 
-  // Admin plateforme
+  // Company agencies (branches/locations)
+  listAgencies: () => apiFetch('/v1/agencies'),
+  createAgency: (agency) => apiFetch('/v1/agencies', { method: 'POST', body: agency }),
+  updateAgency: (id, agency) => apiFetch(`/v1/agencies/${id}`, { method: 'PUT', body: agency }),
+  deleteAgency: (id) => apiFetch(`/v1/agencies/${id}`, { method: 'DELETE' }),
+
+  // Platform admin
   listCompanies: () => apiFetch('/v1/companies'),
   createCompany: (company) => apiFetch('/v1/companies', { method: 'POST', body: company }),
   getUsage: (range = '30d') => apiFetch(`/v1/usage?range=${range}`),

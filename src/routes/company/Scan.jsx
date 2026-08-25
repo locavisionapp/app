@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PlateScanStep } from '../../components/scan/PlateScanStep'
 import { GuidedInspection } from '../../components/scan/GuidedInspection'
@@ -19,7 +19,12 @@ export default function Scan() {
   const [vehicle, setVehicle] = useState(null)
   const [creating, setCreating] = useState(false)
   const [result, setResult] = useState(null)
-  const [manual, setManual] = useState({ licensePlate: '', brand: '', model: '', category: 'citadine' })
+  const [manual, setManual] = useState({ licensePlate: '', brand: '', model: '', category: 'citadine', agencyId: '' })
+  const [agencies, setAgencies] = useState([])
+
+  useEffect(() => {
+    api.listAgencies().then(setAgencies).catch(() => setAgencies([]))
+  }, [])
 
   async function createVehicleAndContinue(data) {
     setCreating(true)
@@ -76,6 +81,20 @@ export default function Scan() {
               ))}
             </select>
           </Field>
+          {agencies.length > 0 && (
+            <Field label="Agence (optionnel)">
+              <select
+                className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm"
+                value={manual.agencyId}
+                onChange={(e) => setManual({ ...manual, agencyId: e.target.value })}
+              >
+                <option value="">Aucune agence</option>
+                {agencies.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name} ({a.city})</option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Button className="w-full" disabled={creating || !manual.licensePlate} onClick={() => createVehicleAndContinue(manual)}>
             {creating ? <Spinner size={18} className="text-white" /> : 'Continuer'}
           </Button>

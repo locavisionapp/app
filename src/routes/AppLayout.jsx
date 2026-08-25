@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { ScanLine, Car, LogOut, Building2, BarChart3 } from 'lucide-react'
+import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { cn } from '../lib/cn'
 
 const COMPANY_NAV = [
   { to: '/app/scan', label: 'Scanner', icon: ScanLine },
   { to: '/app/fleet', label: 'Ma flotte', icon: Car },
+  { to: '/app/agencies', label: 'Agences', icon: MapPin },
 ]
 
 const ADMIN_NAV = [
@@ -20,7 +21,7 @@ export default function AppLayout() {
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      {/* Navigation latérale (desktop) */}
+      {/* Desktop side navigation */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 md:flex">
         <p className="mb-6 px-2 text-lg font-bold text-brand-700">LocaVision</p>
         <nav className="flex flex-1 flex-col gap-1">
@@ -40,7 +41,7 @@ export default function AppLayout() {
         <Outlet />
       </main>
 
-      {/* Navigation basse (mobile) */}
+      {/* Mobile bottom navigation */}
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-10 flex border-t border-slate-200 bg-white md:hidden">
         {nav.map((item) => (
           <NavItem key={item.to} {...item} mobile />

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 're
 import { Camera, AlertTriangle } from 'lucide-react'
 
 /**
- * Flux caméra + capture d'image en base64 JPEG.
- * Expose `capture()` via ref pour être déclenché par un parent (bouton dédié).
+ * Camera stream + base64 JPEG capture.
+ * Exposes `capture()` via ref so a parent (a dedicated button) can trigger it.
  */
 export const CameraView = forwardRef(function CameraView({ facingMode = 'environment', overlay, className }, ref) {
   const videoRef = useRef(null)

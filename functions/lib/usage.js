@@ -1,13 +1,13 @@
 const { db, todayKey, FieldValue } = require('./db')
 
 /**
- * Compteur d'appels API par entreprise, utilisé par le dashboard admin plateforme.
- * Non bloquant : une écriture de comptage qui échoue ne doit jamais casser une requête.
+ * Per-company API call counter, used by the platform admin usage dashboard.
+ * Non-blocking: a failed counter write must never break the actual request.
  */
 function logUsage(req, res, next) {
   next()
   const companyId = req.auth?.companyId
-  if (!companyId) return // appels platform_admin non rattachés à une entreprise
+  if (!companyId) return // platform_admin calls aren't tied to a company
 
   const endpoint = `${req.method} ${req.baseUrl}${req.path}`.replace(/\/[a-zA-Z0-9_-]{20,}/g, '/:id')
   const date = todayKey()

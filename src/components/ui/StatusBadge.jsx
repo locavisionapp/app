@@ -1,6 +1,6 @@
 import { cn } from '../../lib/cn'
 
-// vert = rien à signaler, orange = points à surveiller, rouge = dégâts sérieux
+// green = nothing to report, orange = points to watch, red = serious damage
 const STATUS = {
   green: { label: 'Bon état', dot: 'bg-status-good', text: 'text-status-good', bg: 'bg-status-goodBg' },
   orange: { label: 'À surveiller', dot: 'bg-status-warn', text: 'text-status-warn', bg: 'bg-status-warnBg' },

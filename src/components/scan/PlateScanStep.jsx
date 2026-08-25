@@ -6,8 +6,8 @@ import { Spinner } from '../ui/Spinner'
 import { api } from '../../lib/api'
 
 /**
- * Étape 1 du scan : photo de la plaque -> identification du véhicule
- * (OCR + fiche technique) via l'API. L'utilisateur confirme ensuite la fiche.
+ * Scan step 1: photo of the plate -> vehicle identification (OCR + spec
+ * sheet) via the API. The user then confirms the identified vehicle.
  */
 export function PlateScanStep({ onIdentified }) {
   const camRef = useRef(null)

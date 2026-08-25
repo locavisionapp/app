@@ -1,11 +1,12 @@
 /**
- * Identification d'un véhicule à partir d'une photo de plaque, exécutée côté serveur
- * (les clés tierces ne quittent jamais Cloud Functions) :
- * 1. PlateRecognizer  -> OCR image -> texte de la plaque
- * 2. RapidAPI SIV     -> texte plaque -> fiche technique du véhicule
- * 3. Gemini (fallback)-> si les APIs externes échouent
+ * License plate identification pipeline, run server-side (third-party keys
+ * never leave Cloud Functions / the Vercel function):
+ * 1. PlateRecognizer -> OCR the photo -> plate text
+ * 2. RapidAPI SIV    -> plate text -> vehicle spec sheet
+ * 3. Gemini fallback -> if the external APIs fail
  */
 const { extractVehicleInfoFromPlate } = require('./ai')
+const { fetchWithTimeout } = require('./fetchWithTimeout')
 
 const PLATE_RECOGNIZER_TOKEN = process.env.PLATE_RECOGNIZER_TOKEN
 const RAPIDAPI_KEY = process.env.SIV_API_KEY
@@ -19,11 +20,11 @@ async function ocrPlateFromImage(imageBase64) {
   formData.append('upload', new Blob([buffer], { type: 'image/jpeg' }), 'plate.jpg')
   formData.append('regions', 'fr')
 
-  const response = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
-    method: 'POST',
-    headers: { Authorization: `Token ${PLATE_RECOGNIZER_TOKEN}` },
-    body: formData,
-  })
+  const response = await fetchWithTimeout(
+    'https://api.platerecognizer.com/v1/plate-reader/',
+    { method: 'POST', headers: { Authorization: `Token ${PLATE_RECOGNIZER_TOKEN}` }, body: formData },
+    12000
+  )
   if (!response.ok) return null
 
   const data = await response.json()
@@ -58,9 +59,11 @@ async function fetchVehicleDataFromSIV(plate) {
 
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint.url, {
-        headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': endpoint.host, ...(endpoint.extraHeaders || {}) },
-      })
+      const response = await fetchWithTimeout(
+        endpoint.url,
+        { headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': endpoint.host, ...(endpoint.extraHeaders || {}) } },
+        10000
+      )
       if (!response.ok) continue
       const data = await response.json()
       if (!data || data.error) continue
@@ -116,9 +119,7 @@ function guessCategoryFromModel(model, brand) {
   return 'citadine'
 }
 
-/**
- * Pipeline complet : image -> plaque -> fiche véhicule.
- */
+/** Full pipeline: photo -> plate text -> vehicle spec sheet. */
 async function identifyVehicleFromPlateImage(imageBase64) {
   let plate = null
   try {
@@ -136,7 +137,7 @@ async function identifyVehicleFromPlateImage(imageBase64) {
     }
   }
 
-  // Fallback : demander directement à Gemini d'identifier le véhicule sur l'image.
+  // Fallback: ask Gemini to identify the vehicle directly from the image.
   try {
     const fallback = await extractVehicleInfoFromPlate(imageBase64)
     if (fallback && !fallback.error) return fallback

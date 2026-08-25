@@ -41,7 +41,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Comment ça marche */}
+      {/* How it works */}
       <section id="comment-ca-marche" className="border-t border-slate-100 bg-slate-50 py-14">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-center text-2xl font-bold text-slate-900">Trois étapes, un seul geste terrain</h2>
@@ -63,7 +63,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Transparence */}
+      {/* Transparency */}
       <section className="py-14">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-center text-2xl font-bold text-slate-900">Une IA transparente, pas une boîte noire</h2>
@@ -85,7 +85,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Pour qui */}
+      {/* Who it's for */}
       <section className="border-t border-slate-100 bg-slate-50 py-14">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-center text-2xl font-bold text-slate-900">Conçu pour la location, utile bien au-delà</h2>
@@ -132,7 +132,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* CTA final */}
+      {/* Final CTA */}
       <section className="border-t border-slate-100 bg-gradient-to-br from-brand-700 via-brand-600 to-accent-600 py-14 text-center text-white">
         <h2 className="text-2xl font-bold">Envie d'ouvrir un compte entreprise ?</h2>
         <p className="mt-2 text-brand-100">L'équipe LocaVision crée votre accès et génère votre clé API.</p>

@@ -12,22 +12,38 @@ branchez tout ça à votre propre CRM via une API publique.
    analyse globale qui rend un verdict clair — vert / orange / rouge — et la liste des points
    relevés.
 3. **Historique** : chaque inspection est archivée par véhicule.
-4. **Tarifs** : chaque entreprise fixe le tarif journalier de ses véhicules.
-5. **Admin plateforme** : ouverture des comptes entreprise (génère une clé API) et suivi du
+4. **Agences & flotte** : chaque entreprise peut organiser sa flotte par agence (ville), et
+   filtrer sa flotte par agence, ville, catégorie de véhicule, état ou recherche libre.
+5. **Tarifs** : chaque entreprise fixe le tarif journalier de ses véhicules.
+6. **Admin plateforme** : ouverture des comptes entreprise (génère une clé API) et suivi du
    volume d'appels API par entreprise.
 
 ## Architecture
 
-- **Frontend** : React + Vite + Tailwind CSS, mobile-first, PWA installable — **déployé sur
-  Vercel** (https://app-locavision.vercel.app).
-- **Backend** : Firebase Cloud Functions — une API REST publique et versionnée (`/v1/...`)
-  qui est **l'unique porte d'entrée** vers les données. Le frontend web consomme cette même
-  API (avec un jeton Firebase Auth) ; les CRM tiers l'appellent avec une clé API
-  d'entreprise (`Authorization: Bearer sk_live_...`). Les clés Gemini / PlateRecognizer /
-  RapidAPI ne vivent que côté serveur.
-- **Données** : Firestore (`companies/{id}/vehicles/{id}/inspections/{id}`), Storage pour les
-  photos. Les règles Firestore/Storage bloquent tout accès direct depuis un client — seul
-  l'Admin SDK des Cloud Functions y accède.
+- **Frontend** : React + Vite + Tailwind CSS, mobile-first, PWA installable, routes
+  chargées à la demande (code-splitting) — déployé sur **Vercel**.
+- **Backend** : une API REST publique et versionnée (`/v1/...`), **seule porte d'entrée**
+  vers les données. Le frontend web consomme cette même API (avec un jeton Firebase Auth) ;
+  les CRM tiers l'appellent avec une clé API d'entreprise (`Authorization: Bearer
+  sk_live_...`). Les clés Gemini / PlateRecognizer / RapidAPI ne vivent que côté serveur.
+  Toute la logique métier vit dans `functions/app.js` (Express), servie par deux runtimes
+  interchangeables selon le plan Firebase disponible :
+  - `api/handler.js` — fonction serverless **Vercel** (aucun plan payant requis) ;
+  - `functions/index.js` — **Firebase Cloud Functions** (nécessite le plan Blaze).
+- **Données** : Firestore (`companies/{id}/agencies/{id}`, `companies/{id}/vehicles/{id}/
+  inspections/{id}`), Storage pour les photos. Les règles Firestore/Storage bloquent tout
+  accès direct depuis un client — seul l'Admin SDK (utilisé par l'API) y accède.
+- **Fiabilité & sécurité** : en-têtes de sécurité (helmet), limitation de débit par IP,
+  validation des entrées sur chaque route, gestion d'erreurs centralisée qui ne renvoie
+  jamais de détail interne au client, timeouts sur tous les appels IA/tiers.
+
+### Un seul back-end, plusieurs clients (API-first)
+
+Parce que toute la logique (scan, inspection, flotte, tarifs, agences) vit derrière l'API
+`/v1/...` et nulle part ailleurs, une future app **Flutter** (ou tout autre client) consomme
+exactement la même API que ce front web et les CRM tiers — aucune logique métier à
+dupliquer ou à réécrire, juste un nouveau client HTTP authentifié par jeton Firebase ou clé
+API.
 
 ## Installation
 
@@ -51,7 +67,8 @@ npm run dev                # frontend Vite, proxying /v1 vers l'émulateur hosti
 
 L'ouverture de comptes entreprise se fait depuis l'espace admin, mais il faut un premier
 compte `platform_admin` pour y accéder, ainsi qu'une entreprise de démo pour tester le
-parcours entreprise. `functions/scripts/seed.js` crée les deux d'un coup :
+parcours entreprise. `functions/scripts/seed.js` crée les deux d'un coup (+ une agence de
+démo) :
 
 ```bash
 # Contre l'émulateur local (voir "Lancer en local" ci-dessus)
@@ -59,7 +76,8 @@ cd functions
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
   GCLOUD_PROJECT=demo-smoketest node scripts/seed.js
 
-# Contre le vrai projet Firebase (après `firebase login`)
+# Contre le vrai projet Firebase (après `firebase login`, ou avec une clé de service via
+# GOOGLE_APPLICATION_CREDENTIALS)
 GCLOUD_PROJECT=<votre-project-id> node scripts/seed.js
 ```
 
@@ -69,22 +87,30 @@ utilisation réelle.
 
 ### Déploiement
 
-Le frontend est hébergé sur **Vercel** ; le backend (Cloud Functions, Firestore, Storage)
-sur **Firebase**. `vercel.json` réécrit `/v1/**` vers l'URL des Cloud Functions
-(`https://europe-west1-<project-id>.cloudfunctions.net/api/v1/**`) — adaptez ce fichier si
-l'ID de projet ou la région changent.
+Le frontend et l'API sont hébergés sur **Vercel** (une seule plateforme, pas de plan
+payant requis) ; Firestore/Storage/Auth restent sur **Firebase**. `vercel.json` route
+`/v1/**` vers `api/handler.js`, qui délègue à l'app Express partagée
+(`functions/app.js`).
 
-**Backend (Firebase)** :
+**Variables d'environnement Vercel** (Project Settings → Environment Variables) :
+
+| Variable | Description |
+|---|---|
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Config Firebase publique (identique à `.env`) |
+| `FIREBASE_SERVICE_ACCOUNT_KEY` | Contenu JSON complet d'une clé de compte de service (Firebase Console → Paramètres du projet → Comptes de service) |
+| `FIREBASE_STORAGE_BUCKET` | Même valeur que `VITE_FIREBASE_STORAGE_BUCKET` |
+| `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` | Clés tierces (jamais préfixées `VITE_`, jamais exposées au client) |
+
+Désactivez aussi la **Deployment Protection** (Vercel SSO) dans les réglages du projet si
+le site doit être accessible sans authentification Vercel.
+
+**Bascule optionnelle vers Firebase Cloud Functions** (si le projet passe un jour sur le
+plan Blaze) :
 
 ```bash
 firebase login
 firebase deploy --only functions,firestore,storage
+firebase functions:secrets:set GEMINI_API_KEY   # + PLATE_RECOGNIZER_TOKEN, SIV_API_KEY
 ```
 
-Les secrets `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` doivent être définis
-en production via `firebase functions:secrets:set <NOM>`.
-
-**Frontend (Vercel)** : dans les réglages du projet Vercel, renseignez les variables
-`VITE_FIREBASE_*` (les mêmes que dans `.env`, sans `VITE_USE_FIREBASE_EMULATOR`), et
-désactivez la **Deployment Protection** (Vercel SSO) si le site doit être accessible sans
-authentification Vercel.
+Puis pointer `vercel.json` vers l'URL des Cloud Functions au lieu de `api/handler.js`.

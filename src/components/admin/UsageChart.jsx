@@ -1,8 +1,8 @@
 import { useState } from 'react'
 
 /**
- * Barres verticales simples : volume d'appels API par jour.
- * Une seule série (le total) : pas de légende nécessaire, juste un survol.
+ * Simple vertical bars: API call volume per day.
+ * Single series (the total): no legend needed, just a hover tooltip.
  */
 export function UsageChart({ data }) {
   const [hover, setHover] = useState(null)

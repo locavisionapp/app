@@ -1,7 +1,7 @@
 const { onRequest } = require('firebase-functions/v2/https')
 const app = require('./app')
 
-// Point d'entrée Firebase Cloud Functions (nécessite le plan Blaze). Tant que
-// le projet reste sur Spark, c'est api/v1/[...path].cjs (Vercel) qui sert
-// cette même app Express — voir README pour la bascule.
+// Firebase Cloud Functions entry point (requires the Blaze plan). While the
+// project stays on Spark, api/handler.js (Vercel) serves this same Express
+// app instead — see README for the switch-over.
 exports.api = onRequest({ region: 'europe-west1', secrets: ['GEMINI_API_KEY', 'PLATE_RECOGNIZER_TOKEN', 'SIV_API_KEY'] }, app)

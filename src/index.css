@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/forms";
 
-/* Tailwind v4 : les tokens personnalisés doivent être déclarés ici (CSS-first),
-   un tailwind.config.js seul n'est plus lu automatiquement. */
+/* Tailwind v4: custom tokens must be declared here (CSS-first) — a
+   tailwind.config.js alone is no longer auto-loaded. */
 @theme {
   --color-brand-50: #eff6ff;
   --color-brand-100: #dbeafe;
@@ -36,7 +36,7 @@
   --color-teal-500: #14b8a6;
   --color-teal-600: #0d9488;
 
-  /* codes couleur de l'inspection IA : vert = OK, orange = à surveiller, rouge = dégâts critiques */
+  /* AI inspection status colors: green = OK, orange = watch, red = critical damage */
   --color-status-good: #16a34a;
   --color-status-goodBg: #f0fdf4;
   --color-status-warn: #d97706;
@@ -58,7 +58,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Zone tactile confortable en usage terrain (gants, une main) */
+/* Comfortable tap targets for field use (gloves, one-handed) */
 button, a {
   -webkit-tap-highlight-color: transparent;
 }
