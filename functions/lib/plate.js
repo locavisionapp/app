@@ -1,0 +1,150 @@
+/**
+ * Identification d'un véhicule à partir d'une photo de plaque, exécutée côté serveur
+ * (les clés tierces ne quittent jamais Cloud Functions) :
+ * 1. PlateRecognizer  -> OCR image -> texte de la plaque
+ * 2. RapidAPI SIV     -> texte plaque -> fiche technique du véhicule
+ * 3. Gemini (fallback)-> si les APIs externes échouent
+ */
+const { extractVehicleInfoFromPlate } = require('./ai')
+
+const PLATE_RECOGNIZER_TOKEN = process.env.PLATE_RECOGNIZER_TOKEN
+const RAPIDAPI_KEY = process.env.SIV_API_KEY
+
+async function ocrPlateFromImage(imageBase64) {
+  if (!PLATE_RECOGNIZER_TOKEN) return null
+
+  const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+  const buffer = Buffer.from(base64Data, 'base64')
+  const formData = new FormData()
+  formData.append('upload', new Blob([buffer], { type: 'image/jpeg' }), 'plate.jpg')
+  formData.append('regions', 'fr')
+
+  const response = await fetch('https://api.platerecognizer.com/v1/plate-reader/', {
+    method: 'POST',
+    headers: { Authorization: `Token ${PLATE_RECOGNIZER_TOKEN}` },
+    body: formData,
+  })
+  if (!response.ok) return null
+
+  const data = await response.json()
+  const best = data.results?.[0]
+  return best?.plate?.toUpperCase() || null
+}
+
+async function fetchVehicleDataFromSIV(plate) {
+  if (!RAPIDAPI_KEY || !plate) return null
+
+  const cleanPlate = plate.replace(/[\s-]/g, '').toUpperCase()
+  let dashedPlate = cleanPlate
+  if (/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(cleanPlate)) {
+    dashedPlate = `${cleanPlate.substring(0, 2)}-${cleanPlate.substring(2, 5)}-${cleanPlate.substring(5, 7)}`
+  }
+
+  const endpoints = [
+    {
+      url: `https://api-de-plaque-d-immatriculation-france.p.rapidapi.com/?plaque=${dashedPlate}`,
+      host: 'api-de-plaque-d-immatriculation-france.p.rapidapi.com',
+      extraHeaders: { plaque: dashedPlate, 'Content-Type': 'application/json' },
+    },
+    {
+      url: `https://immatriculation.p.rapidapi.com/immatriculation?immatriculation=${cleanPlate}`,
+      host: 'immatriculation.p.rapidapi.com',
+    },
+    {
+      url: `https://checkcar.p.rapidapi.com/api/car?plate=${cleanPlate}&country=FR`,
+      host: 'checkcar.p.rapidapi.com',
+    },
+  ]
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint.url, {
+        headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': endpoint.host, ...(endpoint.extraHeaders || {}) },
+      })
+      if (!response.ok) continue
+      const data = await response.json()
+      if (!data || data.error) continue
+      return normalizeSIVResponse(data, plate)
+    } catch (e) {
+      console.warn(`[SIV] ${endpoint.host} exception:`, e.message)
+    }
+  }
+  return null
+}
+
+function normalizeSIVResponse(rawData, originalPlate) {
+  const data = rawData.data || rawData.vehicle || rawData
+
+  const marque = data.marque || data.brand || data.make || data.Marque || data.AWN_marque || ''
+  const modele = data.modele || data.model || data.Modele || data.commercial_name || data.AWN_modele || ''
+  const rawDate = data.annee_premiere_immatriculation || data.Date_1ere_Mise_En_Circulation || data.first_registration_date || data.AWN_date_mise_en_circulation
+  const annee = rawDate ? new Date(rawDate.split('-').reverse().join('-')).getFullYear() : data.year || data.annee || null
+  const carburant = data.energieNGC || data.energie || data.fuel_type || data.carburant || data.fuel || data.AWN_energie || ''
+  const puissance = data.puissance_din || data.puissance || data.power_hp || data.puisFisc || data.AWN_puissance_fiscale || null
+  const co2 = data.co2 || data.CO2 || data.Taux_De_CO2 || data.AWN_taux_de_co2 || null
+  const vin = data.vin || data.VIN || data.numero_serie || data.AWN_numero_de_serie || ''
+
+  const fuelMap = {
+    ES: 'Essence', GO: 'Diesel', EL: 'Électrique', GH: 'Hybride', EH: 'Hybride', GN: 'GNV',
+    gasoline: 'Essence', diesel: 'Diesel', electric: 'Électrique', hybrid: 'Hybride', petrol: 'Essence',
+  }
+  const normalizedFuel = fuelMap[carburant?.toUpperCase?.()] || fuelMap[carburant?.toLowerCase?.()] || carburant || 'Essence'
+
+  return {
+    licensePlate: originalPlate,
+    brand: marque,
+    model: modele,
+    year: annee ? parseInt(annee) : null,
+    fuel: normalizedFuel,
+    power: puissance ? parseInt(puissance) : null,
+    co2: co2 ? parseInt(co2) : null,
+    vin: vin || '',
+    category: guessCategoryFromModel(modele, marque),
+    color: data.couleur || data.color || '',
+    transmission: data.boite_vitesses || data.transmission || 'Manuelle',
+  }
+}
+
+function guessCategoryFromModel(model, brand) {
+  const text = `${model} ${brand}`.toLowerCase()
+  if (text.includes('suv') || text.includes('4x4') || text.includes('crossover')) return 'suv'
+  if (text.includes('van') || text.includes('fourgon') || text.includes('sprinter')) return 'fourgon'
+  if (text.includes('truck') || text.includes('camion') || text.includes('semi')) return 'camion'
+  if (text.includes('moto') || text.includes('cbr') || text.includes('gsxr')) return 'moto'
+  if (text.includes('scooter')) return 'scooter'
+  if (text.includes('berline') || text.includes('308') || text.includes('classe c')) return 'berline'
+  return 'citadine'
+}
+
+/**
+ * Pipeline complet : image -> plaque -> fiche véhicule.
+ */
+async function identifyVehicleFromPlateImage(imageBase64) {
+  let plate = null
+  try {
+    plate = await ocrPlateFromImage(imageBase64)
+  } catch (e) {
+    console.warn('[Pipeline] PlateRecognizer skipped:', e.message)
+  }
+
+  if (plate) {
+    try {
+      const sivData = await fetchVehicleDataFromSIV(plate)
+      if (sivData?.brand) return sivData
+    } catch (e) {
+      console.warn('[Pipeline] SIV skipped:', e.message)
+    }
+  }
+
+  // Fallback : demander directement à Gemini d'identifier le véhicule sur l'image.
+  try {
+    const fallback = await extractVehicleInfoFromPlate(imageBase64)
+    if (fallback && !fallback.error) return fallback
+  } catch (e) {
+    console.warn('[Pipeline] Gemini fallback failed:', e.message)
+  }
+
+  return { error: true, message: "Impossible d'identifier la plaque.", licensePlate: plate }
+}
+
+module.exports = { identifyVehicleFromPlateImage, ocrPlateFromImage, fetchVehicleDataFromSIV }

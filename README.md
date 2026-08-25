@@ -1,202 +1,67 @@
-# LocaVision - Plateforme SaaS de Gestion de Flotte avec Inspection IA
+# LocaVision
 
-Une solution complète de gestion de flotte de véhicules avec inspection par intelligence artificielle utilisant Google Gemini 1.5 Flash pour la détection automatique des dommages.
+Scannez un véhicule, lancez une inspection IA guidée, gardez l'historique complet — et
+branchez tout ça à votre propre CRM via une API publique.
 
-## 🚀 Fonctionnalités
+## Ce que fait l'app
 
-### 📱 Inspection IA "Step-by-Step"
-- Interface caméra avec overlay SVG dynamique adapté au type de véhicule
-- Séquence de 8 points de contrôle obligatoires (360° extérieur + intérieur)
-- Analyse en temps réel par IA pour détecter les dommages
-- Heatmap interactive de visualisation des dommages
-- Capture GPS automatique pour chaque photo
+1. **Scan de plaque** : une photo suffit à identifier le véhicule (OCR PlateRecognizer →
+   fiche technique SIV via RapidAPI → repli sur Gemini si besoin).
+2. **Inspection IA guidée** : un parcours de capture adapté au type de véhicule (citadine,
+   utilitaire, camion, moto, scooter...), avec validation de cadrage en direct, puis une
+   analyse globale qui rend un verdict clair — vert / orange / rouge — et la liste des points
+   relevés.
+3. **Historique** : chaque inspection est archivée par véhicule.
+4. **Tarifs** : chaque entreprise fixe le tarif journalier de ses véhicules.
+5. **Admin plateforme** : ouverture des comptes entreprise (génère une clé API) et suivi du
+   volume d'appels API par entreprise.
 
-### 📊 Dashboard Administrateur
-- Analytics en temps réel du taux d'utilisation de la flotte
-- Gestion CRUD complète des véhicules avec score de santé
-- Générateur de rapports PDF automatiques
-- Comparatif "Avant/Après" pour facturation des nouveaux dommages
-- Alertes et notifications intelligentes
+## Architecture
 
-### 🖋️ Signature Électronique & Documents
-- Signature électronique sur écran tactile
-- Génération PDF avec valeur légale
-- Rapports comparatifs Départ vs Retour
-- Photos horodatées pour preuves juridiques
+- **Frontend** : React + Vite + Tailwind CSS, mobile-first, PWA installable.
+- **Backend** : Firebase Cloud Functions — une API REST publique et versionnée (`/v1/...`)
+  qui est **l'unique porte d'entrée** vers les données. Le frontend web consomme cette même
+  API (avec un jeton Firebase Auth) ; les CRM tiers l'appellent avec une clé API
+  d'entreprise (`Authorization: Bearer sk_live_...`). Les clés Gemini / PlateRecognizer /
+  RapidAPI ne vivent que côté serveur.
+- **Données** : Firestore (`companies/{id}/vehicles/{id}/inspections/{id}`), Storage pour les
+  photos. Les règles Firestore/Storage bloquent tout accès direct depuis un client — seul
+  l'Admin SDK des Cloud Functions y accède.
 
-### 🌐 Mode Hors-ligne
-- Capture photos sans connexion internet
-- Synchronisation automatique dès le retour en ligne
-- Stockage local optimisé avec IndexedDB
-- Gestion intelligente de la file d'attente de synchronisation
+## Installation
 
-### 📱 PWA Optimisée
-- Progressive Web App pour usage terrain
-- Design responsive mobile-first
-- Thème dark mode haute performance
-- Feedback haptique lors des captures
-
-## 🛠️ Stack Technique
-
-### Frontend
-- **React.js** avec Vite
-- **Tailwind CSS** pour le styling
-- **Framer Motion** pour les animations
-- **Lucide React** pour les icônes
-- **PWA** avec Service Workers
-
-### Backend & Database
-- **Firebase** (Auth, Firestore, Storage)
-- **Firestore Security Rules** strictes
-- **Cloud Storage** pour les images optimisées
-
-### IA Vision
-- **Google Gemini 1.5 Flash** API
-- Analyse en temps réel des dommages
-- Comparaison intelligente Avant/Après
-- Estimation automatique des coûts de réparation
-
-### Mobile & Performance
-- **PWA** optimisée pour terrain
-- **IndexedDB** pour le mode hors-ligne
-- **Canvas API** pour compression images
-- **Geolocation API** pour coordonnées GPS
-
-## 🚀 Démarrage Rapide
-
-### Prérequis
-- Node.js 18+
-- Compte Firebase
-- Clé API Google Gemini
-
-### Installation
-
-1. **Cloner le projet**
-```bash
-git clone <repository-url>
-cd LocaVision
-```
-
-2. **Installer les dépendances**
 ```bash
 npm install
+cd functions && npm install && cd ..
+cp .env.example .env                       # config Firebase publique
+cp functions/.env.example functions/.env   # clés Gemini / PlateRecognizer / SIV
 ```
 
-3. **Configurer les variables d'environnement**
+Renseignez les valeurs dans `.env` et `functions/.env` (projet Firebase existant).
+
+### Lancer en local
+
 ```bash
-cp .env.example .env
-# Éditer .env avec vos clés API
+npm run functions:serve   # émulateurs Firebase (hosting + functions + firestore + auth + storage)
+npm run dev                # frontend Vite, proxying /v1 vers l'émulateur hosting
 ```
 
-4. **Démarrer le développement**
-```bash
-npm run dev
-```
+### Créer le premier compte administrateur plateforme
 
-### Configuration Firebase
-
-1. Créer un projet Firebase
-2. Activer Authentication, Firestore, et Storage
-3. Configurer les règles de sécurité Firestore
-4. Ajouter les clés dans le fichier `.env`
-
-### Configuration Gemini
-
-1. Obtenir une clé API Google AI Platform
-2. Ajouter `VITE_GEMINI_API_KEY` dans `.env`
-
-## 📁 Structure du Projet
+L'ouverture de comptes entreprise se fait depuis l'espace admin, mais il faut un premier
+compte `platform_admin` pour y accéder. Une fois un compte Firebase Auth créé (console
+Firebase ou `firebase auth:import`), ajoutez son document dans Firestore :
 
 ```
-src/
-├── components/          # Composants React
-│   ├── CameraCapture.jsx      # Interface caméra avec overlay
-│   ├── DamageHeatmap.jsx      # Visualisation dommages
-│   └── SignaturePad.jsx       # Signature électronique
-├── pages/              # Pages principales
-│   └── Dashboard.jsx          # Dashboard admin
-├── services/           # Services backend
-│   ├── firebase.js            # Configuration Firebase
-│   ├── firestore.js           # Opérations Firestore
-│   ├── gemini.js              # API Gemini Vision
-│   ├── pdfGenerator.js        # Génération PDF
-│   └── offlineStorage.js      # Stockage hors-ligne
-├── types/              # Types et constantes
-└── App.jsx             # Application principale
-```
-
-## 🔧 Fonctionnalités Techniques
-
-### Analyse par IA
-- Détection automatique des types de dommages (rayures, enfoncements, vitres brisées)
-- Niveau de sévérité (1-5)
-- Estimation des coûts de réparation
-- Comparaison intelligente Avant/Après
-
-### Gestion des Images
-- Compression automatique côté client (Canvas API)
-- Redimensionnement optimisé pour l'IA
-- Stockage avec métadonnées GPS
-- Synchronisation différée hors-ligne
-
-### Sécurité
-- Règles Firestore strictes
-- Authentification Firebase
-- Validation des données côté serveur
-- Chiffrement des données sensibles
-
-## 📊 Analytics & Rapports
-
-### Dashboard Analytics
-- Taux d'utilisation de la flotte
-- Coût total des dommages par mois
-- Score de santé des véhicules
-- Historique des inspections
-
-### Rapports PDF
-- Rapport d'inspection complet
-- Comparatif Avant/Après
-- Photos horodatées
-- Signatures électroniques intégrées
-
-## 🌐 PWA Features
-
-### Installation
-- Ajout à l'écran d'accueil
-- Mode plein écran
-- Lancement rapide
-
-### Hors-ligne
-- Capture photos sans réseau
-- File d'attente de synchronisation
-- Notifications de statut
-
-## 🚀 Déploiement
-
-### Build Production
-```bash
-npm run build
+users/{uid} = { email: "admin@locavision.app", role: "platform_admin", companyId: null }
 ```
 
 ### Déploiement
-- Firebase Hosting recommandé
-- Vercel, Netlify compatibles
-- Configuration PWA automatique
 
-## 📝 License
+```bash
+firebase login
+firebase deploy --only functions,firestore,storage,hosting
+```
 
-Ce projet est sous licence MIT.
-
-## 🤝 Contribuer
-
-1. Fork le projet
-2. Créer une branche feature
-3. Commit les changements
-4. Push vers la branche
-5. Ouvrir une Pull Request
-
-## 📞 Support
-
-Pour toute question ou support technique :
-- Email: support@locavision.com
-- Documentation: docs.locavision.com
+Les secrets `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` doivent être définis
+en production via `firebase functions:secrets:set <NOM>`.

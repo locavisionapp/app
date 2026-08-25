@@ -1,3 +1,0 @@
-git add .
-git commit -m "Ajout du nouveau logo et correction du scanner"
-git push origin main
