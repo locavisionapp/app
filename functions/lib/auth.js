@@ -34,6 +34,14 @@ async function authenticate(req, res, next) {
     const userDoc = await db.collection('users').doc(decoded.uid).get()
     if (!userDoc.exists) return res.status(403).json({ error: 'Utilisateur non provisionné.' })
     const { role, companyId } = userDoc.data()
+
+    if (companyId) {
+      const companyDoc = await db.collection('companies').doc(companyId).get()
+      if (!companyDoc.exists || companyDoc.data().status !== 'active') {
+        return res.status(403).json({ error: 'Compte entreprise suspendu.' })
+      }
+    }
+
     req.auth = { uid: decoded.uid, role, companyId: companyId || null, via: 'firebase' }
     return next()
   } catch (e) {

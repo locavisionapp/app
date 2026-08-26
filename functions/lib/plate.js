@@ -139,11 +139,14 @@ const ENRICHABLE_FIELDS = [
  */
 async function enrichSparseSpecs(vehicleData) {
   const knownCount = ENRICHABLE_FIELDS.filter((f) => vehicleData[f] != null).length
-  if (knownCount >= 4) return vehicleData // SIV already gave us a decent spec sheet
+  // specsSource flags whether the spec sheet is registry-confirmed (SIV) or
+  // an AI estimate from general make/model/year knowledge — surfaced in the
+  // UI so nobody mistakes a plausible guess for a certified fact.
+  if (knownCount >= 4) return { ...vehicleData, specsSource: vehicleData.specsSource || 'siv' }
 
   try {
     const enrichment = await enrichVehicleSpecs(vehicleData)
-    const merged = { ...vehicleData }
+    const merged = { ...vehicleData, specsSource: 'estimated' }
     for (const field of ENRICHABLE_FIELDS) {
       if (merged[field] == null && enrichment[field] != null) merged[field] = enrichment[field]
     }
@@ -151,7 +154,7 @@ async function enrichSparseSpecs(vehicleData) {
     return merged
   } catch (e) {
     console.warn('[Pipeline] Spec enrichment skipped:', e.message)
-    return vehicleData
+    return { ...vehicleData, specsSource: vehicleData.specsSource || null }
   }
 }
 

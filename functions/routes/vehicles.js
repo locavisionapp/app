@@ -17,7 +17,7 @@ const PLATE_MAX_LENGTH = 20
 // Optional spec sheet fields, populated from plate scan / SIV lookup / AI
 // fallback when available. Whitelisted here so a client can never inject
 // arbitrary Firestore fields through vehicle creation.
-const STRING_SPEC_FIELDS = { color: 40, transmission: 30 }
+const STRING_SPEC_FIELDS = { color: 40, transmission: 30, specsSource: 20 }
 const NUMBER_SPEC_FIELDS = [
   'seats', 'doors', 'power', 'torque', 'acceleration', 'maxSpeed',
   'length', 'width', 'height', 'weight', 'trunkVolume', 'co2', 'critAir', 'consumptionMixed',
@@ -108,11 +108,11 @@ router.post(
 
     let specs = extractSpecs(req.body)
     // Manual entry only gives us brand/model/category — the scan pipeline
-    // already enriches its own result before it reaches this endpoint, so
-    // this only fires when specs are actually sparse. Re-whitelist through
-    // extractSpecs so only spec fields (never brand/model/year/category)
-    // can flow from the enrichment result into the stored vehicle.
-    if (brand && model) {
+    // already enriches its own result (specsSource is set) before it reaches
+    // this endpoint, so this only fires for genuinely un-enriched input.
+    // Re-whitelist through extractSpecs so only spec fields (never
+    // brand/model/year/category) can flow from the enrichment result.
+    if (brand && model && !specs.specsSource) {
       specs = extractSpecs(await enrichSparseSpecs({ brand, model, year, category, ...specs }))
     }
 
@@ -145,6 +145,18 @@ router.get(
     const doc = await vehiclesCol(req.auth.companyId).doc(req.params.id).get()
     if (!doc.exists) throw new ApiError(404, 'Véhicule introuvable.')
     res.json({ id: doc.id, ...doc.data() })
+  })
+)
+
+router.delete(
+  '/vehicles/:id',
+  companyRole,
+  asyncRoute(async (req, res) => {
+    const ref = vehiclesCol(req.auth.companyId).doc(req.params.id)
+    const existing = await ref.get()
+    if (!existing.exists) throw new ApiError(404, 'Véhicule introuvable.')
+    await db.recursiveDelete(ref) // vehicle doc + its inspections subcollection
+    res.status(204).end()
   })
 )
 

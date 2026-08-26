@@ -55,6 +55,7 @@ export const api = {
   listVehicles: (filters = {}) => apiFetch(`/v1/vehicles${toQueryString(filters)}`),
   createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle }),
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
+  deleteVehicle: (id) => apiFetch(`/v1/vehicles/${id}`, { method: 'DELETE' }),
   updateVehiclePricing: (id, pricing) => apiFetch(`/v1/vehicles/${id}/pricing`, { method: 'PUT', body: pricing }),
   updateVehicleAgency: (id, agencyId) => apiFetch(`/v1/vehicles/${id}/agency`, { method: 'PUT', body: { agencyId } }),
   updateVehicleMileage: (id, mileage) => apiFetch(`/v1/vehicles/${id}/mileage`, { method: 'PUT', body: { mileage } }),
@@ -72,6 +73,10 @@ export const api = {
   // Platform admin
   listCompanies: () => apiFetch('/v1/companies'),
   createCompany: (company) => apiFetch('/v1/companies', { method: 'POST', body: company }),
+  updateCompanyStatus: (id, status) => apiFetch(`/v1/companies/${id}/status`, { method: 'PUT', body: { status } }),
+  updateCompanyPricing: (id, monthlyFee) => apiFetch(`/v1/companies/${id}/pricing`, { method: 'PUT', body: { monthlyFee } }),
+  regenerateCompanyApiKey: (id) => apiFetch(`/v1/companies/${id}/regenerate-key`, { method: 'POST' }),
+  deleteCompany: (id) => apiFetch(`/v1/companies/${id}`, { method: 'DELETE' }),
   getUsage: (range = '30d') => apiFetch(`/v1/usage?range=${range}`),
 }
 
