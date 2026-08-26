@@ -6,10 +6,13 @@ const { db } = require('./lib/db')
 const { authenticate } = require('./lib/auth')
 const { logUsage } = require('./lib/usage')
 const { asyncRoute } = require('./lib/asyncRoute')
+const { MODULES } = require('./lib/config')
 
 const vehiclesRoutes = require('./routes/vehicles')
 const companiesRoutes = require('./routes/companies')
 const agenciesRoutes = require('./routes/agencies')
+const employeesRoutes = require('./routes/employees')
+const companyRoutes = require('./routes/company')
 
 // Shared Express app: mounted on Firebase Cloud Functions (index.js) and on
 // Vercel serverless functions (../api/handler.js). Keeping all business
@@ -41,17 +44,25 @@ v1.get(
   asyncRoute(async (req, res) => {
     const { role, companyId, uid } = req.auth
     let companyName = null
+    let enabledModules = null
+    let companyStatus = null
+    let trialEndsAt = null
     if (companyId) {
       const doc = await db.collection('companies').doc(companyId).get()
       companyName = doc.data()?.name || null
+      enabledModules = doc.data()?.enabledModules || MODULES
+      companyStatus = doc.data()?.status || null
+      trialEndsAt = doc.data()?.trialEndsAt || null
     }
-    res.json({ role, companyId, companyName, uid })
+    res.json({ role, companyId, companyName, uid, enabledModules, companyStatus, trialEndsAt })
   })
 )
 
 v1.use(vehiclesRoutes)
 v1.use(companiesRoutes)
 v1.use(agenciesRoutes)
+v1.use(employeesRoutes)
+v1.use(companyRoutes)
 
 app.use('/v1', v1)
 

@@ -70,13 +70,29 @@ export const api = {
   updateAgency: (id, agency) => apiFetch(`/v1/agencies/${id}`, { method: 'PUT', body: agency }),
   deleteAgency: (id) => apiFetch(`/v1/agencies/${id}`, { method: 'DELETE' }),
 
+  // Company employees (usernames/passwords managed by the company itself)
+  listEmployees: () => apiFetch('/v1/employees'),
+  createEmployee: (employee) => apiFetch('/v1/employees', { method: 'POST', body: employee }),
+  updateEmployee: (uid, updates) => apiFetch(`/v1/employees/${uid}`, { method: 'PUT', body: updates }),
+  resetEmployeePassword: (uid) => apiFetch(`/v1/employees/${uid}/reset-password`, { method: 'POST' }),
+  deleteEmployee: (uid) => apiFetch(`/v1/employees/${uid}`, { method: 'DELETE' }),
+
+  // Self-service company account (API key, usage, license, webhook, quotes)
+  getMyCompany: () => apiFetch('/v1/company'),
+  regenerateMyApiKey: () => apiFetch('/v1/company/regenerate-key', { method: 'POST' }),
+  updateMyWebhook: (webhookUrl) => apiFetch('/v1/company/webhook', { method: 'PUT', body: { webhookUrl } }),
+  getMyQuotes: () => apiFetch('/v1/company/quotes'),
+
   // Platform admin
   listCompanies: () => apiFetch('/v1/companies'),
   createCompany: (company) => apiFetch('/v1/companies', { method: 'POST', body: company }),
   updateCompanyStatus: (id, status) => apiFetch(`/v1/companies/${id}/status`, { method: 'PUT', body: { status } }),
-  updateCompanyPricing: (id, monthlyFee) => apiFetch(`/v1/companies/${id}/pricing`, { method: 'PUT', body: { monthlyFee } }),
+  updateCompanyModules: (id, enabledModules) => apiFetch(`/v1/companies/${id}/modules`, { method: 'PUT', body: { enabledModules } }),
   regenerateCompanyApiKey: (id) => apiFetch(`/v1/companies/${id}/regenerate-key`, { method: 'POST' }),
   deleteCompany: (id) => apiFetch(`/v1/companies/${id}`, { method: 'DELETE' }),
+  listCompanyQuotes: (id) => apiFetch(`/v1/companies/${id}/quotes`),
+  createCompanyQuote: (id, quote) => apiFetch(`/v1/companies/${id}/quotes`, { method: 'POST', body: quote }),
+  markQuotePaid: (id, quoteId, payment) => apiFetch(`/v1/companies/${id}/quotes/${quoteId}/mark-paid`, { method: 'PUT', body: payment }),
   getUsage: (range = '30d') => apiFetch(`/v1/usage?range=${range}`),
 }
 

@@ -13,6 +13,9 @@ const Scan = lazy(() => import('./routes/company/Scan'))
 const Fleet = lazy(() => import('./routes/company/Fleet'))
 const VehicleDetail = lazy(() => import('./routes/company/VehicleDetail'))
 const Agencies = lazy(() => import('./routes/company/Agencies'))
+const Employees = lazy(() => import('./routes/company/Employees'))
+const Account = lazy(() => import('./routes/company/Account'))
+const Docs = lazy(() => import('./routes/company/Docs'))
 const Companies = lazy(() => import('./routes/admin/Companies'))
 const ApiUsage = lazy(() => import('./routes/admin/ApiUsage'))
 
@@ -37,6 +40,9 @@ export default function App() {
               <Route path="/app/fleet" element={<Fleet />} />
               <Route path="/app/vehicles/:id" element={<VehicleDetail />} />
               <Route path="/app/agencies" element={<Agencies />} />
+              <Route path="/app/employees" element={<Employees />} />
+              <Route path="/app/account" element={<Account />} />
+              <Route path="/app/docs" element={<Docs />} />
             </Route>
 
             <Route

@@ -13,7 +13,7 @@ export default function ApiUsage() {
 
   if (!usage) return <FullscreenSpinner />
 
-  const totalMonthlyFees = usage.byCompany.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
+  const totalAnnualFees = usage.byCompany.reduce((sum, c) => sum + (c.annualFee || 0), 0)
   const totalEstimatedCost = usage.byCompany.reduce((sum, c) => sum + (c.estimatedCost || 0), 0)
 
   return (
@@ -30,23 +30,23 @@ export default function ApiUsage() {
 
       <div className="grid grid-cols-3 gap-3">
         <Card className="p-4 text-center">
-          <p className="text-lg font-bold text-slate-900">{totalMonthlyFees.toLocaleString('fr-FR')} €</p>
-          <p className="text-xs text-slate-500">Revenu mensuel (tarifs)</p>
+          <p className="text-lg font-bold text-slate-900">{totalAnnualFees.toLocaleString('fr-FR')} €</p>
+          <p className="text-xs text-slate-500">Licences annuelles actives</p>
         </Card>
         <Card className="p-4 text-center">
           <p className="text-lg font-bold text-slate-900">{totalEstimatedCost.toLocaleString('fr-FR')} €</p>
-          <p className="text-xs text-slate-500">Coût API estimé</p>
+          <p className="text-xs text-slate-500">Coût API estimé (30j)</p>
         </Card>
         <Card className="p-4 text-center">
-          <p className={`text-lg font-bold ${totalMonthlyFees - totalEstimatedCost >= 0 ? 'text-status-good' : 'text-status-bad'}`}>
-            {(totalMonthlyFees - totalEstimatedCost).toLocaleString('fr-FR')} €
+          <p className={`text-lg font-bold ${totalAnnualFees - totalEstimatedCost >= 0 ? 'text-status-good' : 'text-status-bad'}`}>
+            {(totalAnnualFees - totalEstimatedCost).toLocaleString('fr-FR')} €
           </p>
           <p className="text-xs text-slate-500">Marge estimée</p>
         </Card>
       </div>
       <p className="text-xs text-slate-400">
-        Coût API estimé à {usage.costPerCallEur ?? 0} € / appel (constante configurable, pas une facture réelle) — le
-        revenu correspond au tarif mensuel renseigné par entreprise, pas à un paiement réellement encaissé.
+        Coût API estimé à {usage.costPerCallEur ?? 0} € / appel (constante configurable, pas une facture réelle). Les
+        licences annuelles correspondent aux devis marqués "payé" (virement reçu), pas à un paiement en ligne.
       </p>
 
       <div>
@@ -58,7 +58,7 @@ export default function ApiUsage() {
               <div className="text-right text-sm">
                 <p className="font-semibold text-slate-700">{c.count.toLocaleString('fr-FR')} appels</p>
                 <p className="text-xs text-slate-400">
-                  {c.estimatedCost ?? 0} € coût · {c.monthlyFee ?? 0} € / mois
+                  {c.estimatedCost ?? 0} € coût · {c.annualFee ?? 0} € / an
                 </p>
               </div>
             </Card>

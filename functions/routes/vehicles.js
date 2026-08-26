@@ -1,15 +1,18 @@
 const express = require('express')
 const { randomUUID } = require('crypto')
-const { db } = require('../lib/db')
-const { requireRole } = require('../lib/auth')
+const { db, FieldValue } = require('../lib/db')
+const { requireRole, requireModule } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
 const { identifyVehicleFromPlateImage, enrichSparseSpecs } = require('../lib/plate')
 const { validateCapture, analyzeBatchInspection } = require('../lib/ai')
 const { uploadInspectionPhoto } = require('../lib/storage')
 const { getCategoryLabel } = require('../lib/categories')
+const { dispatchWebhook } = require('../lib/webhooks')
 
 const router = express.Router()
-const companyRole = requireRole('company_admin', 'company_user')
+const companyRole = requireRole('company_admin', 'employee')
+const fleetModule = requireModule('fleet')
+const scanModule = requireModule('scan')
 
 const MAX_PHOTOS_PER_INSPECTION = 30
 const PLATE_MAX_LENGTH = 20
@@ -42,6 +45,7 @@ function vehiclesCol(companyId) {
 router.post(
   '/scan-plate',
   companyRole,
+  scanModule,
   asyncRoute(async (req, res) => {
     const { image } = req.body
     if (!image || typeof image !== 'string') throw new ApiError(400, 'Image manquante.')
@@ -55,6 +59,7 @@ router.post(
 router.get(
   '/vehicles',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     // A single `createdAt` ordered query (already indexed by default) covers
     // every company's fleet in one read; all filters below run in-memory.
@@ -86,6 +91,7 @@ router.get(
 router.post(
   '/vehicles',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const { licensePlate, brand, model, year, category, fuel, vin, agencyId } = req.body
     if (!licensePlate || typeof licensePlate !== 'string' || licensePlate.length > PLATE_MAX_LENGTH) {
@@ -101,6 +107,13 @@ router.post(
 
     const col = vehiclesCol(req.auth.companyId)
     const existing = await col.where('licensePlate', '==', licensePlate.toUpperCase()).limit(1).get()
+
+    const maxVehicles = (await db.collection('companies').doc(req.auth.companyId).get()).data()?.license?.limits?.maxVehicles
+    if (existing.empty && maxVehicles) {
+      const count = await col.count().get()
+      if (count.data().count >= maxVehicles) throw new ApiError(403, `Limite de ${maxVehicles} véhicule(s) atteinte pour votre licence.`)
+    }
+
     if (!existing.empty) {
       const doc = existing.docs[0]
       return res.json({ id: doc.id, ...doc.data() })
@@ -134,6 +147,7 @@ router.post(
       createdAt: Date.now(),
     }
     const ref = await col.add(vehicle)
+    dispatchWebhook(req.auth.companyId, 'vehicle.created', { id: ref.id, ...vehicle })
     res.status(201).json({ id: ref.id, ...vehicle })
   })
 )
@@ -141,6 +155,7 @@ router.post(
 router.get(
   '/vehicles/:id',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const doc = await vehiclesCol(req.auth.companyId).doc(req.params.id).get()
     if (!doc.exists) throw new ApiError(404, 'Véhicule introuvable.')
@@ -151,11 +166,13 @@ router.get(
 router.delete(
   '/vehicles/:id',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const ref = vehiclesCol(req.auth.companyId).doc(req.params.id)
     const existing = await ref.get()
     if (!existing.exists) throw new ApiError(404, 'Véhicule introuvable.')
     await db.recursiveDelete(ref) // vehicle doc + its inspections subcollection
+    dispatchWebhook(req.auth.companyId, 'vehicle.deleted', { id: req.params.id })
     res.status(204).end()
   })
 )
@@ -163,6 +180,7 @@ router.delete(
 router.put(
   '/vehicles/:id/pricing',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const dailyRate = Number(req.body?.dailyRate)
     if (!Number.isFinite(dailyRate) || dailyRate < 0 || dailyRate > 100000) {
@@ -181,6 +199,7 @@ router.put(
 router.put(
   '/vehicles/:id/mileage',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const mileage = Number(req.body?.mileage)
     if (!Number.isFinite(mileage) || mileage < 0 || mileage > 2_000_000) {
@@ -199,6 +218,7 @@ router.put(
 router.put(
   '/vehicles/:id/agency',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const ref = vehiclesCol(req.auth.companyId).doc(req.params.id)
     const existing = await ref.get()
@@ -221,6 +241,7 @@ router.put(
 router.get(
   '/vehicles/:id/inspections',
   companyRole,
+  fleetModule,
   asyncRoute(async (req, res) => {
     const snap = await vehiclesCol(req.auth.companyId)
       .doc(req.params.id)
@@ -235,6 +256,7 @@ router.get(
 router.post(
   '/vehicles/:id/inspections/validate-step',
   companyRole,
+  scanModule,
   asyncRoute(async (req, res) => {
     const { image, pointName } = req.body
     if (!image || typeof image !== 'string') throw new ApiError(400, 'Image manquante.')
@@ -255,6 +277,7 @@ router.post(
 router.post(
   '/vehicles/:id/inspections',
   companyRole,
+  scanModule,
   asyncRoute(async (req, res) => {
     const { photos } = req.body
     if (!Array.isArray(photos) || photos.length === 0) throw new ApiError(400, 'Aucune photo fournie.')
@@ -264,6 +287,17 @@ router.post(
     const vehicleDoc = await vehicleRef.get()
     if (!vehicleDoc.exists) throw new ApiError(404, 'Véhicule introuvable.')
     const vehicleType = getCategoryLabel(vehicleDoc.data().category)
+
+    const companyRef = db.collection('companies').doc(req.auth.companyId)
+    const maxScansPerMonth = (await companyRef.get()).data()?.license?.limits?.maxScansPerMonth
+    const monthKey = new Date().toISOString().slice(0, 7) // YYYY-MM
+    const scanUsageRef = companyRef.collection('scanUsage').doc(monthKey)
+    if (maxScansPerMonth) {
+      const usageDoc = await scanUsageRef.get()
+      if ((usageDoc.data()?.count || 0) >= maxScansPerMonth) {
+        throw new ApiError(403, `Limite de ${maxScansPerMonth} scans/mois atteinte pour votre licence.`)
+      }
+    }
 
     const analysis = await analyzeBatchInspection(photos, vehicleType)
 
@@ -286,6 +320,8 @@ router.post(
 
     await vehicleRef.collection('inspections').doc(inspectionId).set(inspection)
     await vehicleRef.set({ lastStatus: inspection.status, lastInspectionId: inspectionId }, { merge: true })
+    await scanUsageRef.set({ count: FieldValue.increment(1) }, { merge: true })
+    dispatchWebhook(req.auth.companyId, 'inspection.completed', { vehicleId: req.params.id, inspectionId, ...inspection })
 
     res.status(201).json({ id: inspectionId, ...inspection, status_label: inspection.statusLabel, health_score: inspection.healthScore })
   })
