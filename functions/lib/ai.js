@@ -60,10 +60,13 @@ function inlineImage(imageBase64) {
 
 /** Vehicle identification fallback, used when OCR + SIV lookup both fail. */
 async function extractVehicleInfoFromPlate(imageBase64) {
-  const prompt = `You are a specialized vehicle expert (cars, trucks, motorcycles, construction machinery). Identify the vehicle from the photo.
+  const prompt = `You are a specialized vehicle expert (cars, trucks, motorcycles, construction machinery). Identify the vehicle from the photo and fill in as many technical specs as you can from your general knowledge of this make/model/year — leave a field null rather than guessing wildly if you're not confident.
   JSON format ONLY: { "licensePlate": "string", "brand": "string", "model": "string", "year": number, "vin": "string",
   "category": "citadine|berline|suv|utilitaire|fourgon|camion|poids-lourd|moto|scooter|engin-btp|remorque|luxe|autre",
-  "fuel": "Essence|Diesel|Électrique|Hybride|GNR|Hydrogène", "color": "string" }`
+  "fuel": "Essence|Diesel|Électrique|Hybride|GNR|Hydrogène", "transmission": "Manuelle|Automatique|Hydrostatique", "color": "string",
+  "seats": number, "doors": number, "power": number, "torque": number, "acceleration": number, "maxSpeed": number,
+  "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
+  "co2": number, "critAir": number, "consumptionMixed": number }`
   try {
     return await callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }])
   } catch (error) {

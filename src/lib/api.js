@@ -57,6 +57,7 @@ export const api = {
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
   updateVehiclePricing: (id, pricing) => apiFetch(`/v1/vehicles/${id}/pricing`, { method: 'PUT', body: pricing }),
   updateVehicleAgency: (id, agencyId) => apiFetch(`/v1/vehicles/${id}/agency`, { method: 'PUT', body: { agencyId } }),
+  updateVehicleMileage: (id, mileage) => apiFetch(`/v1/vehicles/${id}/mileage`, { method: 'PUT', body: { mileage } }),
 
   listInspections: (vehicleId) => apiFetch(`/v1/vehicles/${vehicleId}/inspections`),
   validateCaptureStep: (vehicleId, payload) => apiFetch(`/v1/vehicles/${vehicleId}/inspections/validate-step`, { method: 'POST', body: payload }),

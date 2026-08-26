@@ -121,6 +121,7 @@ export default function Fleet() {
                   <p className="text-sm text-slate-500">
                     {v.licensePlate} · {getCategoryLabel(v.category)}
                     {v.city ? ` · ${v.city}` : ''}
+                    {v.mileage != null ? ` · ${v.mileage.toLocaleString('fr-FR')} km` : ''}
                   </p>
                   {v.pricing?.dailyRate != null && (
                     <p className="mt-1 text-sm font-medium text-brand-700">{v.pricing.dailyRate} {v.pricing.currency || 'EUR'} / jour</p>

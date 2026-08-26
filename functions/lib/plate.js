@@ -86,6 +86,9 @@ function normalizeSIVResponse(rawData, originalPlate) {
   const puissance = data.puissance_din || data.puissance || data.power_hp || data.puisFisc || data.AWN_puissance_fiscale || null
   const co2 = data.co2 || data.CO2 || data.Taux_De_CO2 || data.AWN_taux_de_co2 || null
   const vin = data.vin || data.VIN || data.numero_serie || data.AWN_numero_de_serie || ''
+  const seats = data.nbPlaces || data.places || data.seats || null
+  const doors = data.nbPortes || data.doors || null
+  const weight = data.poidsAVide || data.weight || data.AWN_poids_a_vide || null
 
   const fuelMap = {
     ES: 'Essence', GO: 'Diesel', EL: 'Électrique', GH: 'Hybride', EH: 'Hybride', GN: 'GNV',
@@ -105,6 +108,9 @@ function normalizeSIVResponse(rawData, originalPlate) {
     category: guessCategoryFromModel(modele, marque),
     color: data.couleur || data.color || '',
     transmission: data.boite_vitesses || data.transmission || 'Manuelle',
+    seats: seats ? parseInt(seats) : null,
+    doors: doors ? parseInt(doors) : null,
+    weight: weight ? parseInt(weight) : null,
   }
 }
 

@@ -14,6 +14,27 @@ const companyRole = requireRole('company_admin', 'company_user')
 const MAX_PHOTOS_PER_INSPECTION = 30
 const PLATE_MAX_LENGTH = 20
 
+// Optional spec sheet fields, populated from plate scan / SIV lookup / AI
+// fallback when available. Whitelisted here so a client can never inject
+// arbitrary Firestore fields through vehicle creation.
+const STRING_SPEC_FIELDS = { color: 40, transmission: 30 }
+const NUMBER_SPEC_FIELDS = [
+  'seats', 'doors', 'power', 'torque', 'acceleration', 'maxSpeed',
+  'length', 'width', 'height', 'weight', 'trunkVolume', 'co2', 'critAir', 'consumptionMixed',
+]
+
+function extractSpecs(body) {
+  const specs = {}
+  for (const [field, maxLen] of Object.entries(STRING_SPEC_FIELDS)) {
+    if (body[field] != null) specs[field] = String(body[field]).slice(0, maxLen)
+  }
+  for (const field of NUMBER_SPEC_FIELDS) {
+    const n = Number(body[field])
+    if (body[field] != null && Number.isFinite(n)) specs[field] = n
+  }
+  return specs
+}
+
 function vehiclesCol(companyId) {
   return db.collection('companies').doc(companyId).collection('vehicles')
 }
@@ -95,6 +116,8 @@ router.post(
       vin: (vin || '').toString().slice(0, 30),
       agencyId: agencyId ? String(agencyId) : null,
       city,
+      mileage: null,
+      ...extractSpecs(req.body),
       pricing: { dailyRate: 0, currency: 'EUR' },
       lastStatus: null,
       lastInspectionId: null,
@@ -128,6 +151,24 @@ router.put(
     if (!existing.exists) throw new ApiError(404, 'Véhicule introuvable.')
 
     await ref.set({ pricing: { dailyRate, currency: (req.body?.currency || 'EUR').toString().slice(0, 3) } }, { merge: true })
+    const doc = await ref.get()
+    res.json({ id: doc.id, ...doc.data() })
+  })
+)
+
+router.put(
+  '/vehicles/:id/mileage',
+  companyRole,
+  asyncRoute(async (req, res) => {
+    const mileage = Number(req.body?.mileage)
+    if (!Number.isFinite(mileage) || mileage < 0 || mileage > 2_000_000) {
+      throw new ApiError(400, 'Kilométrage invalide.')
+    }
+    const ref = vehiclesCol(req.auth.companyId).doc(req.params.id)
+    const existing = await ref.get()
+    if (!existing.exists) throw new ApiError(404, 'Véhicule introuvable.')
+
+    await ref.set({ mileage, mileageUpdatedAt: Date.now() }, { merge: true })
     const doc = await ref.get()
     res.json({ id: doc.id, ...doc.data() })
   })
