@@ -1,7 +1,13 @@
 const { fetchWithTimeout } = require('./fetchWithTimeout')
 
 const API_KEY = process.env.GEMINI_API_KEY
-const MODEL_PRIORITY = ['gemini-2.0-flash', 'gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-flash-latest', 'gemini-1.5-pro']
+// Prefer Google's self-updating "-latest" aliases over dated model names:
+// dated names get deprecated/removed every few months (this list has already
+// gone stale once — see git history), while "-latest" always resolves to
+// whatever Google currently considers the best model in that tier, with no
+// maintenance needed on our side. The dated names at the end are a last
+// resort in case an alias is ever pulled entirely.
+const MODEL_PRIORITY = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest', 'gemini-2.5-flash', 'gemini-2.5-pro']
 
 let availableModels = []
 
@@ -18,10 +24,10 @@ async function discoverModels() {
         const found = raw.find((m) => m.name.includes(keyword) && m.supportedGenerationMethods.includes('generateContent'))
         if (found && !sorted.includes(found.name)) sorted.push(found.name)
       }
-      availableModels = sorted.length ? sorted : ['models/gemini-1.5-flash']
+      availableModels = sorted.length ? sorted : ['models/gemini-flash-latest']
     }
   } catch (e) {
-    availableModels = ['models/gemini-1.5-flash']
+    availableModels = ['models/gemini-flash-latest']
   }
 }
 
@@ -74,6 +80,27 @@ async function extractVehicleInfoFromPlate(imageBase64) {
   }
 }
 
+/**
+ * Fills in the spec-sheet fields a SIV lookup didn't provide (many SIV
+ * providers only return brand/model/year/fuel), from Gemini's general
+ * knowledge of the confirmed make/model/year — no image involved, so it's a
+ * much more reliable lookup than identifying a vehicle from a photo.
+ */
+async function enrichVehicleSpecs({ brand, model, year, category }) {
+  const prompt = `Vehicle: ${brand} ${model}${year ? `, model year ${year}` : ''} (category: ${category || 'unknown'}).
+  From your general automotive knowledge of this exact make/model/year, give its typical technical specs.
+  Leave a field null if you're not confident rather than guessing wildly.
+  JSON format ONLY: { "transmission": "Manuelle|Automatique|Hydrostatique",
+  "seats": number, "doors": number, "power": number, "torque": number, "acceleration": number, "maxSpeed": number,
+  "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
+  "co2": number, "critAir": number, "consumptionMixed": number }`
+  try {
+    return await callGemini([{ parts: [{ text: prompt }] }])
+  } catch (error) {
+    return {}
+  }
+}
+
 /** Quick capture validation (framing / quality) during the guided walkthrough. */
 async function validateCapture(imageBase64, pointName, vehicleType = 'véhicule') {
   const prompt = `Valide cette photo pour l'étape "${pointName}" d'un(e) ${vehicleType}.
@@ -108,4 +135,4 @@ async function compareInspections(currentAnalysis, previousAnalysis) {
   return callGemini([{ parts: [{ text: prompt }] }])
 }
 
-module.exports = { extractVehicleInfoFromPlate, validateCapture, analyzeBatchInspection, compareInspections }
+module.exports = { extractVehicleInfoFromPlate, enrichVehicleSpecs, validateCapture, analyzeBatchInspection, compareInspections }

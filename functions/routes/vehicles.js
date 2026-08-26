@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto')
 const { db } = require('../lib/db')
 const { requireRole } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
-const { identifyVehicleFromPlateImage } = require('../lib/plate')
+const { identifyVehicleFromPlateImage, enrichSparseSpecs } = require('../lib/plate')
 const { validateCapture, analyzeBatchInspection } = require('../lib/ai')
 const { uploadInspectionPhoto } = require('../lib/storage')
 const { getCategoryLabel } = require('../lib/categories')
@@ -106,6 +106,16 @@ router.post(
       return res.json({ id: doc.id, ...doc.data() })
     }
 
+    let specs = extractSpecs(req.body)
+    // Manual entry only gives us brand/model/category — the scan pipeline
+    // already enriches its own result before it reaches this endpoint, so
+    // this only fires when specs are actually sparse. Re-whitelist through
+    // extractSpecs so only spec fields (never brand/model/year/category)
+    // can flow from the enrichment result into the stored vehicle.
+    if (brand && model) {
+      specs = extractSpecs(await enrichSparseSpecs({ brand, model, year, category, ...specs }))
+    }
+
     const vehicle = {
       licensePlate: licensePlate.toUpperCase(),
       brand: (brand || 'Inconnu').toString().slice(0, 60),
@@ -117,7 +127,7 @@ router.post(
       agencyId: agencyId ? String(agencyId) : null,
       city,
       mileage: null,
-      ...extractSpecs(req.body),
+      ...specs,
       pricing: { dailyRate: 0, currency: 'EUR' },
       lastStatus: null,
       lastInspectionId: null,

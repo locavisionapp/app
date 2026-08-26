@@ -5,7 +5,7 @@
  * 2. RapidAPI SIV    -> plate text -> vehicle spec sheet
  * 3. Gemini fallback -> if the external APIs fail
  */
-const { extractVehicleInfoFromPlate } = require('./ai')
+const { extractVehicleInfoFromPlate, enrichVehicleSpecs } = require('./ai')
 const { fetchWithTimeout } = require('./fetchWithTimeout')
 
 const PLATE_RECOGNIZER_TOKEN = process.env.PLATE_RECOGNIZER_TOKEN
@@ -125,6 +125,36 @@ function guessCategoryFromModel(model, brand) {
   return 'citadine'
 }
 
+const ENRICHABLE_FIELDS = [
+  'seats', 'doors', 'power', 'torque', 'acceleration', 'maxSpeed',
+  'length', 'width', 'height', 'weight', 'trunkVolume', 'co2', 'critAir', 'consumptionMixed',
+]
+
+/**
+ * Most SIV providers only reliably return brand/model/year/fuel — the rest
+ * of the spec sheet comes back null more often than not. When that happens,
+ * ask Gemini to fill the gaps from its general knowledge of the now-confirmed
+ * make/model/year (see ai.js#enrichVehicleSpecs). SIV-confirmed values are
+ * never overwritten.
+ */
+async function enrichSparseSpecs(vehicleData) {
+  const knownCount = ENRICHABLE_FIELDS.filter((f) => vehicleData[f] != null).length
+  if (knownCount >= 4) return vehicleData // SIV already gave us a decent spec sheet
+
+  try {
+    const enrichment = await enrichVehicleSpecs(vehicleData)
+    const merged = { ...vehicleData }
+    for (const field of ENRICHABLE_FIELDS) {
+      if (merged[field] == null && enrichment[field] != null) merged[field] = enrichment[field]
+    }
+    if (!merged.transmission && enrichment.transmission) merged.transmission = enrichment.transmission
+    return merged
+  } catch (e) {
+    console.warn('[Pipeline] Spec enrichment skipped:', e.message)
+    return vehicleData
+  }
+}
+
 /** Full pipeline: photo -> plate text -> vehicle spec sheet. */
 async function identifyVehicleFromPlateImage(imageBase64) {
   let plate = null
@@ -137,7 +167,7 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   if (plate) {
     try {
       const sivData = await fetchVehicleDataFromSIV(plate)
-      if (sivData?.brand) return sivData
+      if (sivData?.brand) return await enrichSparseSpecs(sivData)
     } catch (e) {
       console.warn('[Pipeline] SIV skipped:', e.message)
     }
@@ -146,7 +176,7 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   // Fallback: ask Gemini to identify the vehicle directly from the image.
   try {
     const fallback = await extractVehicleInfoFromPlate(imageBase64)
-    if (fallback && !fallback.error) return fallback
+    if (fallback && !fallback.error) return await enrichSparseSpecs(fallback)
   } catch (e) {
     console.warn('[Pipeline] Gemini fallback failed:', e.message)
   }
@@ -154,4 +184,4 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   return { error: true, message: "Impossible d'identifier la plaque.", licensePlate: plate }
 }
 
-module.exports = { identifyVehicleFromPlateImage, ocrPlateFromImage, fetchVehicleDataFromSIV }
+module.exports = { identifyVehicleFromPlateImage, ocrPlateFromImage, fetchVehicleDataFromSIV, enrichSparseSpecs }
