@@ -93,7 +93,10 @@ export const api = {
   // The plate pipeline chains OCR -> registry lookup -> AI fallback.
   scanPlate: (imageBase64) => apiFetch('/v1/scan-plate', { method: 'POST', body: { image: imageBase64 }, timeoutMs: 65000 }),
 
-  listVehicles: (filters = {}) => apiFetchPage(`/v1/vehicles${toQueryString(filters)}`),
+  // Typed plate -> registry lookup (or the existing fleet vehicle).
+  lookupPlate: (licensePlate) => apiFetch('/v1/lookup-plate', { method: 'POST', body: { licensePlate }, timeoutMs: 45000 }),
+
+  listVehicles:(filters = {}) => apiFetchPage(`/v1/vehicles${toQueryString(filters)}`),
   createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle, timeoutMs: 45000 }),
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
   deleteVehicle: (id) => apiFetch(`/v1/vehicles/${id}`, { method: 'DELETE' }),

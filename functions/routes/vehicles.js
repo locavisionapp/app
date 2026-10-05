@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto')
 const { db, FieldValue } = require('../lib/db')
 const { requireRole, requireModule } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
-const { identifyVehicleFromPlateImage, enrichSparseSpecs } = require('../lib/plate')
+const { identifyVehicleFromPlateImage, identifyVehicleFromPlateText, normalizePlate, enrichSparseSpecs } = require('../lib/plate')
 const { validateCapture, analyzeBatchInspection } = require('../lib/ai')
 const {
   uploadInspectionPhoto,
@@ -68,6 +68,13 @@ function parseMileage(value) {
   return Math.round(mileage)
 }
 
+/** Finds a vehicle by plate, matching both the canonical and compact spellings (older records may lack dashes). */
+async function findVehicleByPlate(companyId, plate) {
+  const variants = [...new Set([plate, plate.replace(/-/g, '')])]
+  const snap = await vehiclesCol(companyId).where('licensePlate', 'in', variants).limit(1).get()
+  return snap.empty ? null : snap.docs[0]
+}
+
 async function getVehicleOr404(companyId, vehicleId) {
   const ref = vehiclesCol(companyId).doc(vehicleId)
   const doc = await ref.get()
@@ -97,6 +104,26 @@ router.post(
     // 200 even on failure: lets the client fall back to manual entry instead
     // of treating a "couldn't read the plate" outcome as a hard error.
     res.json(result)
+  })
+)
+
+/**
+ * Typed plate -> vehicle identification. A plate already in the fleet is
+ * answered from it (no registry call, no cost) with `existingVehicleId`;
+ * otherwise the SIV registry is queried. 200 with `error: true` when not
+ * found, so the client can ask for brand/model by hand.
+ */
+router.post(
+  '/lookup-plate',
+  companyRole,
+  scanModule,
+  asyncRoute(async (req, res) => {
+    const raw = String(req.body?.licensePlate || '')
+    const plate = normalizePlate(raw)
+    if (plate.replace(/-/g, '').length < 2 || plate.length > PLATE_MAX_LENGTH) throw new ApiError(400, 'Plaque invalide.')
+    const existing = await findVehicleByPlate(req.auth.companyId, plate)
+    if (existing) return res.json({ ...existing.data(), id: undefined, existingVehicleId: existing.id, licensePlate: plate })
+    res.json(await identifyVehicleFromPlateText(plate))
   })
 )
 
@@ -187,7 +214,8 @@ router.post(
     if (!licensePlate || typeof licensePlate !== 'string' || !licensePlate.trim() || licensePlate.length > PLATE_MAX_LENGTH) {
       throw new ApiError(400, 'Plaque manquante ou invalide.')
     }
-    const plate = licensePlate.trim().toUpperCase()
+    const plate = normalizePlate(licensePlate)
+    if (plate.replace(/-/g, '').length < 2) throw new ApiError(400, 'Plaque manquante ou invalide.')
 
     let city = null
     if (agencyId) {
@@ -197,12 +225,11 @@ router.post(
     }
 
     const col = vehiclesCol(req.auth.companyId)
-    const existing = await col.where('licensePlate', '==', plate).limit(1).get()
-    if (!existing.empty) {
+    const existing = await findVehicleByPlate(req.auth.companyId, plate)
+    if (existing) {
       // Re-scanning a known plate opens its existing record (and history)
       // instead of creating a duplicate.
-      const doc = existing.docs[0]
-      return res.json({ id: doc.id, ...doc.data() })
+      return res.json({ id: existing.id, ...existing.data() })
     }
 
     const maxVehicles = req.company?.license?.limits?.maxVehicles

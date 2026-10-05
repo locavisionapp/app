@@ -158,6 +158,31 @@ async function enrichSparseSpecs(vehicleData) {
   }
 }
 
+/**
+ * Canonical plate format, so the same vehicle is always stored (and
+ * de-duplicated) under one string whether it was OCR'd ("AB123CD"), typed
+ * ("ab 123 cd") or sent by an API client. Current French SIV plates become
+ * "AB-123-CD"; anything else (old FNI plates, foreign plates) is just
+ * upper-cased with spaces/dashes collapsed.
+ */
+function normalizePlate(value) {
+  const compact = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  if (/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(compact)) return `${compact.slice(0, 2)}-${compact.slice(2, 5)}-${compact.slice(5)}`
+  return String(value || '').toUpperCase().trim().replace(/[\s-]+/g, '-').replace(/^-|-$/g, '')
+}
+
+/** Plate text typed by the user -> vehicle spec sheet (registry lookup only, no image). */
+async function identifyVehicleFromPlateText(plateText) {
+  const plate = normalizePlate(plateText)
+  try {
+    const sivData = await fetchVehicleDataFromSIV(plate)
+    if (sivData?.brand) return { ...(await enrichSparseSpecs(sivData)), licensePlate: plate }
+  } catch (e) {
+    console.warn('[Pipeline] SIV lookup failed:', e.message)
+  }
+  return { error: true, message: 'Véhicule introuvable dans le registre.', licensePlate: plate }
+}
+
 /** Full pipeline: photo -> plate text -> vehicle spec sheet. */
 async function identifyVehicleFromPlateImage(imageBase64) {
   let plate = null
@@ -166,11 +191,12 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   } catch (e) {
     console.warn('[Pipeline] PlateRecognizer skipped:', e.message)
   }
+  if (plate) plate = normalizePlate(plate)
 
   if (plate) {
     try {
       const sivData = await fetchVehicleDataFromSIV(plate)
-      if (sivData?.brand) return await enrichSparseSpecs(sivData)
+      if (sivData?.brand) return { ...(await enrichSparseSpecs(sivData)), licensePlate: plate }
     } catch (e) {
       console.warn('[Pipeline] SIV skipped:', e.message)
     }
@@ -179,7 +205,10 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   // Fallback: ask Gemini to identify the vehicle directly from the image.
   try {
     const fallback = await extractVehicleInfoFromPlate(imageBase64)
-    if (fallback && !fallback.error) return await enrichSparseSpecs(fallback)
+    if (fallback && !fallback.error) {
+      const enriched = await enrichSparseSpecs(fallback)
+      return { ...enriched, licensePlate: normalizePlate(plate || enriched.licensePlate) }
+    }
   } catch (e) {
     console.warn('[Pipeline] Gemini fallback failed:', e.message)
   }
@@ -187,4 +216,11 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   return { error: true, message: "Impossible d'identifier la plaque.", licensePlate: plate }
 }
 
-module.exports = { identifyVehicleFromPlateImage, ocrPlateFromImage, fetchVehicleDataFromSIV, enrichSparseSpecs }
+module.exports = {
+  identifyVehicleFromPlateImage,
+  identifyVehicleFromPlateText,
+  normalizePlate,
+  ocrPlateFromImage,
+  fetchVehicleDataFromSIV,
+  enrichSparseSpecs,
+}
