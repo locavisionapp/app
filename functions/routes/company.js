@@ -3,6 +3,8 @@ const express = require('express')
 const { db } = require('../lib/db')
 const { requireRole, generateApiKey, hashApiKey } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
+const { getBillingSettings } = require('../lib/billing')
+const { sendQuotePdf } = require('../lib/quotePdf')
 
 const router = express.Router()
 const companyRole = requireRole('company_admin', 'employee')
@@ -93,7 +95,15 @@ router.get(
   companyRole,
   asyncRoute(async (req, res) => {
     const snap = await companyRef(req).collection('quotes').orderBy('createdAt', 'desc').get()
-    res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    // Internal cost/margin estimates stay admin-side; cancelled quotes are hidden.
+    res.json(
+      snap.docs
+        .filter((d) => d.data().status !== 'cancelled')
+        .map((d) => {
+          const { internal, ...quote } = d.data()
+          return { id: d.id, ...quote }
+        })
+    )
   })
 )
 
@@ -119,6 +129,20 @@ router.get(
       const { expireAt, ...entry } = d.data()
       return { id: d.id, ...entry, user: entry.via === 'apikey' ? 'Clé API' : names[entry.uid] || 'Compte supprimé' }
     }))
+  })
+)
+
+router.get(
+  '/company/quotes/:quoteId/pdf',
+  companyRole,
+  asyncRoute(async (req, res) => {
+    const [quoteDoc, companyDoc, { seller }] = await Promise.all([
+      companyRef(req).collection('quotes').doc(req.params.quoteId).get(),
+      companyRef(req).get(),
+      getBillingSettings(),
+    ])
+    if (!quoteDoc.exists || quoteDoc.data().status === 'cancelled') throw new ApiError(404, 'Document introuvable.')
+    await sendQuotePdf(res, { quote: quoteDoc.data(), company: companyDoc.data(), seller })
   })
 )
 

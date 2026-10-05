@@ -22,6 +22,8 @@ const Companies = lazy(() => import('./routes/admin/Companies'))
 const ApiUsage = lazy(() => import('./routes/admin/ApiUsage'))
 const Security = lazy(() => import('./routes/Security'))
 const Activity = lazy(() => import('./routes/company/Activity'))
+const Pricing = lazy(() => import('./routes/admin/Pricing'))
+const BillingSettings = lazy(() => import('./routes/admin/BillingSettings'))
 
 // Remount the scan flow on every navigation to /app/scan, so "Nouveau scan"
 // from the result screen (same URL) starts over instead of doing nothing.
@@ -70,6 +72,8 @@ export default function App() {
                 <Route path="/admin" element={<Navigate to="/admin/companies" replace />} />
                 <Route path="/admin/companies" element={<Companies />} />
                 <Route path="/admin/usage" element={<ApiUsage />} />
+                <Route path="/admin/pricing" element={<Pricing />} />
+                <Route path="/admin/settings" element={<BillingSettings />} />
                 <Route path="/admin/security" element={<Security />} />
               </Route>
 

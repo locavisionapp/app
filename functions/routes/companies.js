@@ -6,6 +6,9 @@ const { asyncRoute, ApiError } = require('../lib/asyncRoute')
 const { API_COST_PER_CALL_EUR, MODULES } = require('../lib/config')
 const { slugify, synthesizeEmail } = require('../lib/slug')
 const { deleteCompanyPhotos } = require('../lib/storage')
+const { computeQuote } = require('../lib/pricing')
+const { getBillingSettings, saveBillingSettings, nextDocumentNumber } = require('../lib/billing')
+const { sendQuotePdf } = require('../lib/quotePdf')
 const { SYNTHETIC_EMAIL_DOMAIN } = require('../lib/config')
 
 const router = express.Router()
@@ -167,26 +170,74 @@ router.get(
   })
 )
 
+// ---- billing settings & pricing simulator (platform admin) ----
+
+router.get(
+  '/platform/billing',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    res.json(await getBillingSettings({ fresh: true }))
+  })
+)
+
+router.put(
+  '/platform/billing',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    res.json(await saveBillingSettings(req.body))
+  })
+)
+
+/** Live price + cost/margin simulation from fleet inputs (nothing saved). */
+router.post(
+  '/pricing/simulate',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    const { pricing, costs } = await getBillingSettings()
+    res.json(computeQuote(req.body || {}, pricing, costs))
+  })
+)
+
+/**
+ * Creates a numbered quote (DEV-YYYY-NNNN) from simulator inputs; prices
+ * are always recomputed server-side from the current grid. Optional
+ * `customer` block (billing name/address/VAT number) and `notes`.
+ */
 router.post(
   '/companies/:id/quotes',
   platformOnly,
   asyncRoute(async (req, res) => {
     const companyDoc = await db.collection('companies').doc(req.params.id).get()
     if (!companyDoc.exists) throw new ApiError(404, 'Entreprise introuvable.')
-
-    const pricingModel = req.body?.pricingModel === 'usage' ? 'usage' : 'flat'
+    const { seller, pricing, costs } = await getBillingSettings()
+    const computed = computeQuote(req.body?.input || {}, pricing, costs)
+    const c = req.body?.customer || {}
+    const createdAt = Date.now()
     const quote = {
-      status: 'draft', // draft -> sent -> paid | cancelled
-      pricingModel,
-      amount: pricingModel === 'flat' ? Number(req.body?.amount) || 0 : null,
-      usageTiers: pricingModel === 'usage' ? (Array.isArray(req.body?.usageTiers) ? req.body.usageTiers : []) : null,
-      limits: {
-        maxAgencies: Number(req.body?.limits?.maxAgencies) || null,
-        maxVehicles: Number(req.body?.limits?.maxVehicles) || null,
-        maxScansPerMonth: Number(req.body?.limits?.maxScansPerMonth) || null,
+      number: await nextDocumentNumber('DEV'),
+      status: 'draft', // draft -> paid | cancelled
+      pricingModel: 'flat',
+      input: computed.input,
+      lines: computed.lines,
+      discounts: computed.discounts,
+      subtotal: computed.subtotal,
+      totalHT: computed.totalHT,
+      vatRate: computed.vatRate,
+      vat: computed.vat,
+      totalTTC: computed.totalTTC,
+      amount: computed.totalHT, // yearly license amount (excl. VAT)
+      limits: computed.limits,
+      // Internal estimate, never shown to the customer.
+      internal: { costTotal: computed.costs.total, margin: computed.margin, marginPct: computed.marginPct },
+      customer: {
+        name: String(c.name || companyDoc.data().name || '').trim().slice(0, 160),
+        address: String(c.address || '').trim().slice(0, 400),
+        vatNumber: String(c.vatNumber || '').trim().slice(0, 40),
+        email: String(c.email || companyDoc.data().contactEmail || '').trim().slice(0, 160),
       },
       notes: String(req.body?.notes || '').slice(0, 1000),
-      createdAt: Date.now(),
+      createdAt,
+      validUntil: createdAt + (seller.quoteValidityDays || 30) * DAY_MS,
       paidAt: null,
       paymentReference: null,
     }
@@ -194,6 +245,31 @@ router.post(
     res.status(201).json({ id: ref.id, ...quote })
   })
 )
+
+router.put(
+  '/companies/:id/quotes/:quoteId/cancel',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    const ref = db.collection('companies').doc(req.params.id).collection('quotes').doc(req.params.quoteId)
+    const doc = await ref.get()
+    if (!doc.exists) throw new ApiError(404, 'Devis introuvable.')
+    if (doc.data().status === 'paid') throw new ApiError(409, 'Un devis payé (facturé) ne peut pas être annulé.')
+    await ref.set({ status: 'cancelled', cancelledAt: Date.now() }, { merge: true })
+    res.json({ id: doc.id, ...doc.data(), status: 'cancelled' })
+  })
+)
+
+router.get(
+  '/companies/:id/quotes/:quoteId/pdf',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    const companyRef = db.collection('companies').doc(req.params.id)
+    const [companyDoc, quoteDoc, { seller }] = await Promise.all([companyRef.get(), companyRef.collection('quotes').doc(req.params.quoteId).get(), getBillingSettings()])
+    if (!companyDoc.exists || !quoteDoc.exists) throw new ApiError(404, 'Devis introuvable.')
+    await sendQuotePdf(res, { quote: quoteDoc.data(), company: companyDoc.data(), seller })
+  })
+)
+
 
 router.put(
   '/companies/:id/quotes/:quoteId/mark-paid',
@@ -207,8 +283,12 @@ router.put(
     const paymentReference = String(req.body?.paymentReference || '').slice(0, 120)
     const paidAt = Date.now()
     const quote = quoteDoc.data()
+    if (quote.status === 'paid') throw new ApiError(409, 'Ce devis est déjà payé.')
+    if (quote.status === 'cancelled') throw new ApiError(409, 'Ce devis a été annulé.')
 
-    await quoteRef.set({ status: 'paid', paidAt, paymentReference }, { merge: true })
+    // The paid quote becomes a numbered invoice (FAC-YYYY-NNNN, no gaps).
+    const invoiceNumber = await nextDocumentNumber('FAC')
+    await quoteRef.set({ status: 'paid', paidAt, paymentReference, invoiceNumber, invoicedAt: paidAt }, { merge: true })
     await companyRef.set(
       {
         status: 'active',
@@ -216,8 +296,8 @@ router.put(
         license: {
           type: 'annual',
           pricingModel: quote.pricingModel,
-          amount: quote.amount,
-          usageTiers: quote.usageTiers,
+          amount: quote.totalHT ?? quote.amount,
+          usageTiers: quote.usageTiers ?? null,
           limits: quote.limits,
           startsAt: paidAt,
           endsAt: paidAt + YEAR_MS,

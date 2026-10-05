@@ -6,7 +6,9 @@ import { Field, Input } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useAuth } from '../../lib/AuthContext'
 import { useToast } from '../../components/ui/Toast'
-import { api } from '../../lib/api'
+import { api, saveBlob } from '../../lib/api'
+
+const eur = (n) => `${Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 
 const STATUS_LABELS = {
   active: { label: 'Actif', className: 'text-status-good' },
@@ -27,6 +29,18 @@ export default function Account() {
   const [webhookUrl, setWebhookUrl] = useState('')
   const [savingWebhook, setSavingWebhook] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [downloading, setDownloading] = useState(null)
+
+  async function downloadQuote(q) {
+    setDownloading(q.id)
+    try {
+      saveBlob(await api.getMyQuotePdf(q.id), `${q.status === 'paid' && q.invoiceNumber ? q.invoiceNumber : q.number || 'devis'}.pdf`)
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setDownloading(null)
+    }
+  }
 
   function refresh() {
     setLoadError(null)
@@ -99,7 +113,7 @@ export default function Account() {
         )}
         {company.license && (
           <p className="mt-1 text-sm text-slate-500">
-            Licence annuelle · {company.license.amount ? `${company.license.amount} € / an` : 'tarif à l\'usage'} · renouvellement le{' '}
+            Licence annuelle · {company.license.amount ? `${eur(company.license.amount)} HT / an` : 'tarif à l\'usage'} · renouvellement le{' '}
             {new Date(company.license.endsAt).toLocaleDateString('fr-FR')}
           </p>
         )}
@@ -174,19 +188,29 @@ export default function Account() {
           <Card className="p-4 text-center text-sm text-slate-500">Aucun devis ou facture pour l'instant.</Card>
         ) : (
           <div className="space-y-2">
-            {quotes.map((q) => (
-              <Card key={q.id} className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">
-                    {q.pricingModel === 'flat' ? `${q.amount} € / an` : 'Tarif à l\'usage'}
-                  </p>
-                  <p className="text-xs text-slate-500">{new Date(q.createdAt).toLocaleDateString('fr-FR')}</p>
-                </div>
-                <span className={q.status === 'paid' ? 'text-sm font-medium text-status-good' : 'text-sm text-slate-500'}>
-                  {q.status === 'paid' ? 'Payé' : q.status === 'draft' ? 'Devis' : q.status}
-                </span>
-              </Card>
-            ))}
+            {quotes.map((q) => {
+              const isInvoice = q.status === 'paid' && q.invoiceNumber
+              const expired = q.status === 'draft' && q.validUntil && q.validUntil < Date.now()
+              return (
+                <Card key={q.id} className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">
+                      {isInvoice ? `Facture ${q.invoiceNumber}` : `Devis ${q.number || ''}`} · {eur(q.totalTTC ?? q.amount)} TTC / an
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {isInvoice
+                        ? `Payée le ${new Date(q.paidAt).toLocaleDateString('fr-FR')}`
+                        : expired
+                          ? `Expiré le ${new Date(q.validUntil).toLocaleDateString('fr-FR')} — contactez LocaVision`
+                          : `Émis le ${new Date(q.createdAt).toLocaleDateString('fr-FR')}${q.validUntil ? ` · valable jusqu'au ${new Date(q.validUntil).toLocaleDateString('fr-FR')}` : ''}`}
+                    </p>
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => downloadQuote(q)} disabled={downloading === q.id}>
+                    {downloading === q.id ? <Spinner size={14} /> : <FileText size={14} />} PDF
+                  </Button>
+                </Card>
+              )
+            })}
           </div>
         )}
       </div>

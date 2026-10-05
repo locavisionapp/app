@@ -176,6 +176,7 @@ export const api = {
   regenerateMyApiKey: () => apiFetch('/v1/company/regenerate-key', { method: 'POST' }),
   updateMyWebhook: (webhookUrl) => apiFetch('/v1/company/webhook', { method: 'PUT', body: { webhookUrl } }),
   getMyQuotes: () => apiFetch('/v1/company/quotes'),
+  getMyQuotePdf: (quoteId) => apiFetchBlob(`/v1/company/quotes/${quoteId}/pdf`),
 
   // Platform admin
   listCompanies: () => apiFetch('/v1/companies'),
@@ -186,6 +187,11 @@ export const api = {
   deleteCompany: (id) => apiFetch(`/v1/companies/${id}`, { method: 'DELETE', timeoutMs: 60000 }),
   listCompanyQuotes: (id) => apiFetch(`/v1/companies/${id}/quotes`),
   createCompanyQuote: (id, quote) => apiFetch(`/v1/companies/${id}/quotes`, { method: 'POST', body: quote }),
+  cancelQuote: (id, quoteId) => apiFetch(`/v1/companies/${id}/quotes/${quoteId}/cancel`, { method: 'PUT' }),
+  getQuotePdf: (id, quoteId) => apiFetchBlob(`/v1/companies/${id}/quotes/${quoteId}/pdf`),
+  simulatePricing: (input) => apiFetch('/v1/pricing/simulate', { method: 'POST', body: input }),
+  getBillingSettings: () => apiFetch('/v1/platform/billing'),
+  saveBillingSettings: (settings) => apiFetch('/v1/platform/billing', { method: 'PUT', body: settings }),
   markQuotePaid: (id, quoteId, payment) => apiFetch(`/v1/companies/${id}/quotes/${quoteId}/mark-paid`, { method: 'PUT', body: payment }),
   getUsage: (range = '30d') => apiFetch(`/v1/usage?range=${range}`),
 }

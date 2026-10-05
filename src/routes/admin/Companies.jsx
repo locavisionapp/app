@@ -5,7 +5,8 @@ import { Button } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useToast } from '../../components/ui/Toast'
-import { api } from '../../lib/api'
+import { api, saveBlob } from '../../lib/api'
+import { PricingSimulator } from '../../components/admin/PricingSimulator'
 
 const ALL_MODULES = [
   { id: 'scan', label: 'Scan & inspection IA' },
@@ -39,52 +40,64 @@ function CopyField({ label, value }) {
   )
 }
 
-function QuotesPanel({ companyId }) {
+const QUOTE_STATUS = {
+  draft: { label: 'Devis envoyé', className: 'bg-brand-50 text-brand-700' },
+  paid: { label: 'Payé — facturé', className: 'bg-status-goodBg text-status-good' },
+  cancelled: { label: 'Annulé', className: 'bg-slate-100 text-slate-500' },
+  expired: { label: 'Expiré', className: 'bg-status-warnBg text-status-warn' },
+}
+
+const eur = (n) => `${Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+
+function quoteStatus(q) {
+  if (q.status === 'draft' && q.validUntil && q.validUntil < Date.now()) return 'expired'
+  return q.status
+}
+
+function QuotesPanel({ company }) {
+  const companyId = company.id
   const toast = useToast()
   const [quotes, setQuotes] = useState(null)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ pricingModel: 'flat', amount: 0, maxAgencies: '', maxVehicles: '', maxScansPerMonth: '', notes: '' })
-  const [busy, setBusy] = useState(false)
+  const [showSimulator, setShowSimulator] = useState(false)
+  const [busy, setBusy] = useState(null)
 
   function refresh() {
     api.listCompanyQuotes(companyId).then(setQuotes).catch(() => setQuotes([]))
   }
   useEffect(refresh, [companyId])
 
-  async function createQuote(e) {
-    e.preventDefault()
-    setBusy(true)
+  async function run(id, fn, success) {
+    setBusy(id)
     try {
-      await api.createCompanyQuote(companyId, {
-        pricingModel: form.pricingModel,
-        amount: Number(form.amount) || 0,
-        limits: {
-          maxAgencies: form.maxAgencies ? Number(form.maxAgencies) : null,
-          maxVehicles: form.maxVehicles ? Number(form.maxVehicles) : null,
-          maxScansPerMonth: form.maxScansPerMonth ? Number(form.maxScansPerMonth) : null,
-        },
-        notes: form.notes,
-      })
-      setShowForm(false)
+      await fn()
+      if (success) toast.success(success)
       refresh()
     } catch (e) {
       toast.error(e)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
-  async function markPaid(quoteId) {
-    const paymentReference = window.prompt('Référence du virement reçu (optionnel) :')
+  function markPaid(q) {
+    const paymentReference = window.prompt(`Virement reçu pour ${q.number || 'ce devis'} (${eur(q.totalTTC ?? q.amount)} TTC).\nRéférence du virement (optionnel) :`)
     if (paymentReference === null) return // cancelled: don't activate the license
-    setBusy(true)
+    run(q.id, () => api.markQuotePaid(companyId, q.id, { paymentReference }), 'Paiement enregistré : facture émise et licence activée pour 1 an.')
+  }
+
+  function cancel(q) {
+    if (!window.confirm(`Annuler le devis ${q.number || ''} ?`)) return
+    run(q.id, () => api.cancelQuote(companyId, q.id), 'Devis annulé.')
+  }
+
+  async function pdf(q) {
+    setBusy(q.id)
     try {
-      await api.markQuotePaid(companyId, quoteId, { paymentReference })
-      refresh()
+      saveBlob(await api.getQuotePdf(companyId, q.id), `${q.status === 'paid' && q.invoiceNumber ? q.invoiceNumber : q.number || 'devis'}.pdf`)
     } catch (e) {
       toast.error(e)
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -96,60 +109,72 @@ function QuotesPanel({ companyId }) {
         <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
           <FileText size={13} /> Devis & factures
         </p>
-        <button onClick={() => setShowForm(!showForm)} className="text-xs font-medium text-brand-700 hover:underline">
+        <button onClick={() => setShowSimulator(true)} className="text-xs font-medium text-brand-700 hover:underline">
           + Nouveau devis
         </button>
       </div>
 
-      {showForm && (
-        <form onSubmit={createQuote} className="space-y-2 rounded-xl border border-slate-200 p-3">
-          <div className="flex gap-2">
-            <select
-              className="h-9 flex-1 rounded-lg border border-slate-300 px-2 text-sm"
-              value={form.pricingModel}
-              onChange={(e) => setForm({ ...form, pricingModel: e.target.value })}
-            >
-              <option value="flat">Forfait annuel</option>
-              <option value="usage">À l'usage (dégressif, à négocier)</option>
-            </select>
-            {form.pricingModel === 'flat' && (
-              <Input type="number" min="0" placeholder="Montant € / an" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="w-32" />
-            )}
+      {showSimulator && (
+        <div className="fixed inset-0 z-40 overflow-y-auto bg-black/40 p-2 sm:p-6" onClick={() => setShowSimulator(false)}>
+          <div className="mx-auto max-w-5xl rounded-2xl bg-slate-50 p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-semibold text-slate-900">Nouveau devis — {company.name}</p>
+              <button onClick={() => setShowSimulator(false)} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">✕</button>
+            </div>
+            <PricingSimulator
+              companyId={companyId}
+              company={company}
+              onQuoteCreated={() => {
+                setShowSimulator(false)
+                refresh()
+              }}
+            />
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <Input type="number" min="0" placeholder="Max agences" value={form.maxAgencies} onChange={(e) => setForm({ ...form, maxAgencies: e.target.value })} />
-            <Input type="number" min="0" placeholder="Max véhicules" value={form.maxVehicles} onChange={(e) => setForm({ ...form, maxVehicles: e.target.value })} />
-            <Input type="number" min="0" placeholder="Max scans/mois" value={form.maxScansPerMonth} onChange={(e) => setForm({ ...form, maxScansPerMonth: e.target.value })} />
-          </div>
-          <Input placeholder="Notes (optionnel)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-          <Button size="sm" type="submit" disabled={busy}>{busy ? <Spinner size={14} className="text-white" /> : 'Créer le devis'}</Button>
-        </form>
+        </div>
       )}
 
       {quotes.length === 0 ? (
         <p className="text-xs text-slate-400">Aucun devis pour l'instant.</p>
       ) : (
-        quotes.map((q) => (
-          <div key={q.id} className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-sm">
-            <div>
-              <p className="font-medium text-slate-900">
-                {q.pricingModel === 'flat' ? `${q.amount} € / an` : "Tarif à l'usage"}
-              </p>
-              <p className="text-xs text-slate-500">
-                {q.limits?.maxVehicles ? `${q.limits.maxVehicles} véh. max · ` : ''}
-                {q.limits?.maxAgencies ? `${q.limits.maxAgencies} agences max · ` : ''}
-                {q.limits?.maxScansPerMonth ? `${q.limits.maxScansPerMonth} scans/mois max` : ''}
-              </p>
+        quotes.map((q) => {
+          const status = QUOTE_STATUS[quoteStatus(q)] || QUOTE_STATUS.draft
+          return (
+            <div key={q.id} className="space-y-2 rounded-xl border border-slate-200 p-3 text-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-slate-900">
+                    {q.status === 'paid' && q.invoiceNumber ? q.invoiceNumber : q.number || 'Devis'} · {eur(q.totalTTC ?? q.amount)} TTC / an
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {new Date(q.createdAt).toLocaleDateString('fr-FR')}
+                    {q.limits?.maxVehicles ? ` · ${q.limits.maxVehicles} véhicules` : ''}
+                    {q.limits?.maxAgencies ? ` · ${q.limits.maxAgencies} agence(s)` : ''}
+                    {q.internal ? ` · marge estimée ${q.internal.marginPct} %` : ''}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${status.className}`}>
+                  {status.label}
+                  {q.status === 'paid' && q.paidAt ? ` le ${new Date(q.paidAt).toLocaleDateString('fr-FR')}` : ''}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="secondary" onClick={() => pdf(q)} disabled={busy === q.id}>
+                  {busy === q.id ? <Spinner size={14} /> : <FileText size={14} />} PDF
+                </Button>
+                {q.status === 'draft' && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => markPaid(q)} disabled={busy === q.id}>
+                      <CircleDollarSign size={14} /> Marquer payé
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => cancel(q)} disabled={busy === q.id}>
+                      Annuler
+                    </Button>
+                  </>
+                )}
+              </div>
             </div>
-            {q.status === 'paid' ? (
-              <span className="text-xs font-medium text-status-good">Payé le {new Date(q.paidAt).toLocaleDateString('fr-FR')}</span>
-            ) : (
-              <Button size="sm" variant="secondary" onClick={() => markPaid(q.id)} disabled={busy}>
-                <CircleDollarSign size={14} /> Marquer payé
-              </Button>
-            )}
-          </div>
-        ))
+          )
+        })
       )}
     </div>
   )
@@ -269,7 +294,7 @@ function CompanyRow({ company, onChange }) {
             <Button size="sm" className="mt-2" onClick={saveModules} disabled={busy}>Enregistrer les modules</Button>
           </div>
 
-          <QuotesPanel companyId={company.id} />
+          <QuotesPanel company={company} />
 
           {newKey && <CopyField label="Nouvelle clé API (affichée une seule fois)" value={newKey} />}
 

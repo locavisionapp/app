@@ -13,6 +13,14 @@ const COLORS = { text: '#0f172a', muted: '#64748b', line: '#e2e8f0', brand: '#1d
 
 const PAGE_MARGIN = 40
 
+// fr-FR number formatting uses narrow/no-break spaces (1 234,56), which the
+// built-in PDF fonts can't render: map them to plain spaces on every text call.
+function sanitizeText(doc) {
+  const text = doc.text.bind(doc)
+  doc.text = (value, ...rest) => text(typeof value === 'string' ? value.replace(/[  ]/g, ' ') : value, ...rest)
+  return doc
+}
+
 function fmtDate(ms) {
   if (!ms) return '—'
   return new Date(ms).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -84,6 +92,7 @@ function keyValues(doc, rows) {
  */
 async function buildInspectionReport({ company, vehicle, inspection, inspectorName, photos }) {
   const doc = new PDFDocument({ size: 'A4', margin: PAGE_MARGIN, bufferPages: true, info: { Title: `État des lieux ${vehicle.licensePlate}`, Author: company.name || 'LocaVision' } })
+  sanitizeText(doc)
   const chunks = []
   doc.on('data', (c) => chunks.push(c))
   const done = new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))))

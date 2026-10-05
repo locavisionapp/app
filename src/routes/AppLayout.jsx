@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X, ShieldCheck, History } from 'lucide-react'
+import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X, ShieldCheck, History, Calculator, Settings } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { cn } from '../lib/cn'
 import { listQueued } from '../lib/inspectionQueue'
 import { SyncBanner } from '../components/scan/SyncBanner'
 
 const ADMIN_NAV = [
-  { to: '/admin/companies', label: 'Entreprises', icon: Building2 },
+  { to: '/admin/companies', label: 'Entreprises', icon: Building2, primary: true },
+  { to: '/admin/pricing', label: 'Simulateur', icon: Calculator, primary: true },
   { to: '/admin/usage', label: 'Appels API', icon: BarChart3 },
+  { to: '/admin/settings', label: 'Paramètres', icon: Settings },
   { to: '/admin/security', label: 'Sécurité', icon: ShieldCheck },
 ]
 
@@ -39,8 +41,8 @@ export default function AppLayout() {
   }
   const isAdmin = profile?.role === 'platform_admin'
   const nav = isAdmin ? ADMIN_NAV : companyNav(profile?.enabledModules, profile?.role === 'company_admin')
-  const primaryMobileNav = isAdmin ? nav : nav.filter((i) => i.primary)
-  const secondaryNav = isAdmin ? [] : nav.filter((i) => !i.primary)
+  const primaryMobileNav = nav.filter((i) => i.primary)
+  const secondaryNav = nav.filter((i) => !i.primary)
   const [showMore, setShowMore] = useState(false)
 
   return (
