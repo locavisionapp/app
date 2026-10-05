@@ -10,7 +10,7 @@ import { cn } from '../../lib/cn'
 
 const eur = (n, digits = 2) => `${Number(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits })} €`
 
-const DEFAULT_INPUT = { vehicles: 25, agencies: 1, scansPerVehicleMonth: 4, apiModule: false, commitmentYears: 1, discountPct: 0 }
+const DEFAULT_INPUT = { vehicles: 25, agencies: 1, scansPerVehicleMonth: '', apiModule: false, commitmentYears: 1, discountPct: 0 }
 
 /**
  * Sales simulator: fleet inputs -> price (lines, excl./incl. VAT, monthly
@@ -66,14 +66,11 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
           <Calculator size={15} /> Besoin du client
         </p>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Véhicules">
+          <Field label="Véhicules (environ)" hint={result && result.maxVehicles > result.input.vehicles ? `Tolérance : jusqu'à ${result.maxVehicles} sans surcoût` : null}>
             <Input type="number" min="1" inputMode="numeric" value={input.vehicles} onChange={set('vehicles')} />
           </Field>
           <Field label="Agences / sites">
             <Input type="number" min="1" inputMode="numeric" value={input.agencies} onChange={set('agencies')} />
-          </Field>
-          <Field label="Inspections / véhicule / mois" hint="Pour estimer vos coûts">
-            <Input type="number" min="0" inputMode="numeric" value={input.scansPerVehicleMonth} onChange={set('scansPerVehicleMonth')} />
           </Field>
           <Field label="Engagement">
             <Select value={input.commitmentYears} onChange={set('commitmentYears')}>
@@ -155,8 +152,8 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
                   <p className="text-xs text-slate-500">HT / véhicule / mois</p>
                 </div>
                 <div className="p-3">
-                  <p className="text-lg font-bold text-slate-900">{result.includedScansPerMonth.toLocaleString('fr-FR')}</p>
-                  <p className="text-xs text-slate-500">inspections incluses / mois</p>
+                  <p className="text-lg font-bold text-slate-900">Illimitées</p>
+                  <p className="text-xs text-slate-500">inspections (usage raisonnable)</p>
                 </div>
               </div>
             </div>
@@ -164,8 +161,8 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
         </Card>
 
         {result && (
-          <Card className="p-4">
-            <div className="mb-2 flex items-center justify-between">
+          <Card className="space-y-3 p-4">
+            <div className="flex items-center justify-between">
               <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
                 <TrendingUp size={15} /> Vos coûts estimés & marge (interne)
               </p>
@@ -173,6 +170,16 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
                 Marge {eur(result.margin, 0)} · {result.marginPct} %
               </p>
             </div>
+            <Field label="Hypothèse d'usage : inspections / véhicule / mois" hint="Le client n'a pas à le savoir : sert uniquement à estimer vos coûts.">
+              <Input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                value={input.scansPerVehicleMonth}
+                placeholder={`${result.assumedScansPerVehicleMonth} (valeur par défaut)`}
+                onChange={set('scansPerVehicleMonth')}
+              />
+            </Field>
             <ul className="space-y-1 text-sm text-slate-600">
               {result.costs.lines.map((c) => (
                 <li key={c.label} className="flex justify-between gap-2">
@@ -181,11 +188,28 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
                 </li>
               ))}
             </ul>
-            <p className="mt-2 flex justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-800">
+            <p className="flex justify-between border-t border-slate-100 pt-2 text-sm font-semibold text-slate-800">
               <span>Coût total / an ({result.inspectionsYear.toLocaleString('fr-FR')} inspections)</span>
               <span>{eur(result.costs.total)}</span>
             </p>
-            <p className="mt-2 text-xs text-slate-400">
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Marge selon l'usage réel</p>
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-slate-100">
+                  {result.scenarios.map((sc) => (
+                    <tr key={sc.label}>
+                      <td className="py-1.5 text-slate-600">{sc.label}</td>
+                      <td className="py-1.5 text-right text-slate-500">{sc.scansPerVehicleMonth} / véh. / mois</td>
+                      <td className="py-1.5 text-right text-slate-500">coût {eur(sc.total, 0)}</td>
+                      <td className={cn('py-1.5 text-right font-semibold', sc.marginPct >= 70 ? 'text-status-good' : sc.marginPct >= 40 ? 'text-status-warn' : 'text-status-bad')}>
+                        {sc.marginPct} %
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-slate-400">
               Estimations à partir des hypothèses de coûts (Paramètres). Ces chiffres n'apparaissent jamais sur le devis.
             </p>
           </Card>

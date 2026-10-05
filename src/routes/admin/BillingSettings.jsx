@@ -24,10 +24,12 @@ const PRICE_FIELDS = [
   ['includedAgencies', 'Agences incluses'],
   ['extraAgencyYearly', 'Agence supplémentaire (€ HT / an)'],
   ['apiModuleYearly', 'Module API & webhooks (€ HT / an)'],
-  ['includedScansPerVehicleMonth', 'Inspections incluses / véhicule / mois'],
+  ['fairUseScansPerVehicleMonth', 'Plafond « usage raisonnable » : inspections / véhicule / mois'],
+  ['vehicleTolerancePct', 'Tolérance de flotte (%) — ex : 10 = 25 véhicules → 28 autorisés'],
 ]
 
 const COST_FIELDS = [
+  ['avgScansPerVehicleMonth', 'Usage moyen supposé : inspections / véhicule / mois'],
   ['aiPerInspection', 'Analyse IA par inspection (€)'],
   ['plateScanPerInspection', 'Lecture de plaque par inspection (€)'],
   ['sivLookupPerVehicle', 'Fiche SIV par nouveau véhicule (€)'],

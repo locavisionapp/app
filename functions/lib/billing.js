@@ -58,7 +58,7 @@ async function saveBillingSettings(body = {}) {
 
   const pricing = {}
   const p = body.pricing || {}
-  for (const [key, max] of [['platformFee', 100000], ['extraAgencyYearly', 100000], ['apiModuleYearly', 100000], ['includedAgencies', 1000], ['includedScansPerVehicleMonth', 1000]]) {
+  for (const [key, max] of [['platformFee', 100000], ['extraAgencyYearly', 100000], ['apiModuleYearly', 100000], ['includedAgencies', 1000], ['fairUseScansPerVehicleMonth', 1000], ['vehicleTolerancePct', 100]]) {
     if (p[key] != null) pricing[key] = num(p[key], 0, max, key)
   }
   if (p.vatRate != null) pricing.vatRate = num(p.vatRate, 0, 0.3, 'taux de TVA')

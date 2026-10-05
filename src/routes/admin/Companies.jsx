@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Plus, Copy, Check, ChevronDown, ChevronUp, RefreshCw, Trash2, Ban, PlayCircle, FileText, CircleDollarSign } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Plus, Copy, Check, ChevronDown, ChevronUp, RefreshCw, Trash2, Ban, PlayCircle, FileText, CircleDollarSign, X } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Field'
@@ -37,6 +38,46 @@ function CopyField({ label, value }) {
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * Full-screen dialog rendered at the document root (not inside the company
+ * card), closed only by its ✕, the Escape key, or a click that both starts
+ * and ends on the backdrop — never by interacting with a field inside.
+ */
+function Modal({ title, onClose, children }) {
+  const downOnBackdrop = useRef(false)
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', onKey)
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = overflow
+    }
+  }, [onClose])
+  return createPortal(
+    <div
+      className="fixed inset-0 z-40 overflow-y-auto bg-black/40 p-2 sm:p-6"
+      onMouseDown={(e) => (downOnBackdrop.current = e.target === e.currentTarget)}
+      onMouseUp={(e) => {
+        if (downOnBackdrop.current && e.target === e.currentTarget) onClose()
+        downOnBackdrop.current = false
+      }}
+    >
+      <div className="mx-auto max-w-5xl rounded-2xl bg-slate-50 p-4 shadow-xl" role="dialog" aria-modal="true" aria-label={title}>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="font-semibold text-slate-900">{title}</p>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label="Fermer">
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>,
+    document.body
   )
 }
 
@@ -115,22 +156,16 @@ function QuotesPanel({ company }) {
       </div>
 
       {showSimulator && (
-        <div className="fixed inset-0 z-40 overflow-y-auto bg-black/40 p-2 sm:p-6" onClick={() => setShowSimulator(false)}>
-          <div className="mx-auto max-w-5xl rounded-2xl bg-slate-50 p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-semibold text-slate-900">Nouveau devis — {company.name}</p>
-              <button onClick={() => setShowSimulator(false)} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">✕</button>
-            </div>
-            <PricingSimulator
-              companyId={companyId}
-              company={company}
-              onQuoteCreated={() => {
-                setShowSimulator(false)
-                refresh()
-              }}
-            />
-          </div>
-        </div>
+        <Modal title={`Nouveau devis — ${company.name}`} onClose={() => setShowSimulator(false)}>
+          <PricingSimulator
+            companyId={companyId}
+            company={company}
+            onQuoteCreated={() => {
+              setShowSimulator(false)
+              refresh()
+            }}
+          />
+        </Modal>
       )}
 
       {quotes.length === 0 ? (

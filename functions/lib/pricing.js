@@ -19,12 +19,18 @@ const DEFAULT_PRICING = {
   includedAgencies: 1,
   extraAgencyYearly: 120, // € / year per agency beyond the included ones
   apiModuleYearly: 390, // € / year: API key + webhooks (CRM integration)
-  includedScansPerVehicleMonth: 6, // fair-use inspections included per vehicle per month
+  // Customers know their fleet size, not how many inspections they'll do:
+  // inspections are unlimited, with a high fair-use cap (anti-abuse only).
+  fairUseScansPerVehicleMonth: 30,
+  // A quote for N vehicles allows N + this % before the license blocks new
+  // vehicles, so an extra car or two never stops a customer.
+  vehicleTolerancePct: 10,
   commitmentDiscounts: { 1: 0, 2: 0.08, 3: 0.12 }, // multi-year commitment discount
   vatRate: 0.2,
 }
 
 const DEFAULT_COSTS = {
+  avgScansPerVehicleMonth: 4, // internal usage assumption for the margin estimate
   aiPerInspection: 0.05, // € — Gemini analysis (up to ~80 images in comparison mode)
   plateScanPerInspection: 0.01, // € — plate OCR at each inspection
   sivLookupPerVehicle: 0.1, // € — registry lookup, once per new vehicle
@@ -45,7 +51,8 @@ function normalizeInputs(raw = {}) {
   return {
     vehicles: clampInt(raw.vehicles, 1, 100000, 10),
     agencies: clampInt(raw.agencies, 1, 1000, 1),
-    scansPerVehicleMonth: clampInt(raw.scansPerVehicleMonth, 0, 200, 4),
+    // Internal margin assumption only (null = the default from settings).
+    scansPerVehicleMonth: raw.scansPerVehicleMonth === '' || raw.scansPerVehicleMonth == null ? null : clampInt(raw.scansPerVehicleMonth, 0, 200, null),
     apiModule: Boolean(raw.apiModule),
     commitmentYears,
     discountPct: Math.min(Math.max(Number(raw.discountPct) || 0, 0), 50),
@@ -84,8 +91,12 @@ function computeQuote(rawInputs, pricing = DEFAULT_PRICING, costs = DEFAULT_COST
   if (extraAgencies) lines.push({ label: 'Agences supplémentaires (multi-sites)', qty: extraAgencies, unit: 'agence / an', unitPrice: pricing.extraAgencyYearly })
   if (input.apiModule) lines.push({ label: 'Module API & webhooks (intégration CRM / logiciel métier)', qty: 1, unit: 'an', unitPrice: pricing.apiModuleYearly })
 
-  const includedScansPerMonth = input.vehicles * pricing.includedScansPerVehicleMonth
-  lines.push({ label: `Inspections IA incluses : jusqu'à ${includedScansPerMonth.toLocaleString('fr-FR')} par mois`, qty: 1, unit: 'inclus', unitPrice: 0 })
+  const maxVehicles = Math.ceil(input.vehicles * (1 + (pricing.vehicleTolerancePct || 0) / 100))
+  const fairUseScansPerMonth = maxVehicles * pricing.fairUseScansPerVehicleMonth
+  lines.push({ label: `Inspections IA illimitées (usage raisonnable : ${fairUseScansPerMonth.toLocaleString('fr-FR')} / mois)`, qty: 1, unit: 'inclus', unitPrice: 0 })
+  if (maxVehicles > input.vehicles) {
+    lines.push({ label: `Tolérance de flotte : jusqu'à ${maxVehicles} véhicules sans surcoût`, qty: 1, unit: 'inclus', unitPrice: 0 })
+  }
 
   lines.forEach((l) => (l.total = round2(l.qty * l.unitPrice)))
   const subtotal = round2(lines.reduce((s, l) => s + l.total, 0))
@@ -100,18 +111,30 @@ function computeQuote(rawInputs, pricing = DEFAULT_PRICING, costs = DEFAULT_COST
   const vat = round2(totalHT * pricing.vatRate)
   const totalTTC = round2(totalHT + vat)
 
-  // ---- estimated running costs (yearly) ----
-  const inspectionsYear = input.vehicles * input.scansPerVehicleMonth * 12
-  const storageGb = (inspectionsYear * costs.storageMbPerInspection) / 1024
-  const costLines = [
-    { label: 'Analyse IA des inspections', amount: round2(inspectionsYear * costs.aiPerInspection) },
-    { label: 'Lecture de plaque', amount: round2(inspectionsYear * costs.plateScanPerInspection) },
-    { label: 'Fiches SIV (nouveaux véhicules)', amount: round2(input.vehicles * costs.sivLookupPerVehicle) },
-    { label: `Stockage photos (~${storageGb.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go / an)`, amount: round2(storageGb * costs.storagePerGbYear) },
-    { label: 'Hébergement & services (quote-part)', amount: round2(costs.infraPerCompanyYear) },
+  // ---- estimated running costs (yearly) at a given usage level ----
+  const estimate = (scansPerVehicleMonth) => {
+    const inspectionsYear = input.vehicles * scansPerVehicleMonth * 12
+    const storageGb = (inspectionsYear * costs.storageMbPerInspection) / 1024
+    const lines = [
+      { label: 'Analyse IA des inspections', amount: round2(inspectionsYear * costs.aiPerInspection) },
+      { label: 'Lecture de plaque', amount: round2(inspectionsYear * costs.plateScanPerInspection) },
+      { label: 'Fiches SIV (nouveaux véhicules)', amount: round2(input.vehicles * costs.sivLookupPerVehicle) },
+      { label: `Stockage photos (~${storageGb.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go / an)`, amount: round2(storageGb * costs.storagePerGbYear) },
+      { label: 'Hébergement & services (quote-part)', amount: round2(costs.infraPerCompanyYear) },
+    ]
+    const total = round2(lines.reduce((sum, c) => sum + c.amount, 0))
+    const margin = round2(totalHT - total)
+    return { scansPerVehicleMonth, inspectionsYear, lines, total, margin, marginPct: totalHT ? Math.round((margin / totalHT) * 100) : 0 }
+  }
+  const avg = input.scansPerVehicleMonth ?? costs.avgScansPerVehicleMonth
+  const base = estimate(avg)
+  // How the margin moves with real usage, which nobody knows in advance.
+  const scenarios = [
+    { label: 'Usage faible', ...estimate(Math.max(1, Math.round(avg / 2))) },
+    { label: 'Usage moyen', ...base },
+    { label: 'Usage intensif', ...estimate(Math.round(avg * 3)) },
+    { label: 'Plafond (usage raisonnable)', ...estimate(pricing.fairUseScansPerVehicleMonth) },
   ]
-  const totalCost = round2(costLines.reduce((s, c) => s + c.amount, 0))
-  const margin = round2(totalHT - totalCost)
 
   return {
     input,
@@ -124,13 +147,16 @@ function computeQuote(rawInputs, pricing = DEFAULT_PRICING, costs = DEFAULT_COST
     totalTTC,
     monthlyHT: round2(totalHT / 12),
     perVehicleMonthHT: round2(totalHT / 12 / input.vehicles),
-    includedScansPerMonth,
-    inspectionsYear,
-    costs: { lines: costLines, total: totalCost, perInspection: inspectionsYear ? round2(totalCost / inspectionsYear) : null },
-    margin,
-    marginPct: totalHT ? Math.round((margin / totalHT) * 100) : 0,
+    maxVehicles,
+    fairUseScansPerMonth,
+    assumedScansPerVehicleMonth: avg,
+    inspectionsYear: base.inspectionsYear,
+    costs: { lines: base.lines, total: base.total, perInspection: base.inspectionsYear ? round2(base.total / base.inspectionsYear) : null },
+    margin: base.margin,
+    marginPct: base.marginPct,
+    scenarios: scenarios.map(({ lines, ...rest }) => rest),
     // Limits enforced by the license once the quote is paid.
-    limits: { maxVehicles: input.vehicles, maxAgencies: input.agencies, maxScansPerMonth: includedScansPerMonth },
+    limits: { maxVehicles, maxAgencies: input.agencies, maxScansPerMonth: fairUseScansPerMonth },
   }
 }
 
