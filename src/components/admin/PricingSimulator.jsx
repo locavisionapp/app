@@ -281,16 +281,25 @@ export function PricingSimulator({ companyId, company, onQuoteCreated }) {
         {result?.market && (
           <Card className={cn('flex items-start gap-3 p-4 text-sm', result.market.savingPct > 0 ? 'border-status-good bg-status-goodBg' : 'border-status-warn bg-status-warnBg')}>
             <Trophy size={18} className={cn('mt-0.5 shrink-0', result.market.savingPct > 0 ? 'text-status-good' : 'text-status-warn')} />
-            <div>
+            <div className="space-y-1">
               <p className="font-semibold text-slate-900">
                 {result.market.savingPct > 0
                   ? `${result.market.savingPct} % moins cher que ${result.market.name}`
                   : `${-result.market.savingPct} % plus cher que ${result.market.name}`}
               </p>
               <p className="text-slate-600">
-                Repère : {eur(result.market.yearly, 0)} HT / an à taille de flotte comparable — et LocaVision inclut la détection IA des dégâts.
+                Comparé : {eur(result.market.comparedHT, 0)} HT / an{result.market.excludesNonCore ? ' (hors module API et lignes libres, absents chez le concurrent)' : ''} contre{' '}
+                {eur(result.market.yearly, 0)} HT / an — et LocaVision inclut la détection IA des dégâts.
               </p>
-              <p className="mt-1 text-xs text-slate-400">Source : {result.market.source}. Indicatif, à revérifier avant de le citer.</p>
+              {result.market.neededDiscountPct && (
+                <p className="text-slate-700">
+                  Pour être 10 % moins cher : remise de <strong>{result.market.neededDiscountPct} %</strong> (marge {result.market.marginPctAtNeededDiscount} %).{' '}
+                  <button type="button" onClick={() => setForm({ ...form, discountPct: result.market.neededDiscountPct })} className="font-medium text-brand-700 underline">
+                    Appliquer
+                  </button>
+                </p>
+              )}
+              <p className="text-xs text-slate-400">Source : {result.market.source}. Indicatif, à revérifier avant de le citer.</p>
             </div>
           </Card>
         )}

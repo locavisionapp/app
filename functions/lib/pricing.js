@@ -30,7 +30,7 @@ const DEFAULT_PRICING = {
   // vehicle inspected twice a day) is billed as an "intensive pack" at
   // extraScanPrice, so heavy users pay for what they consume.
   fairUseScansPerVehicleMonth: 20,
-  extraScanPrice: 0.12, // € HT per inspection beyond the included ones
+  extraScanPrice: 0.06, // € HT per inspection beyond the included ones (cost ≈ 0.036 €)
   usageCapBufferPct: 50, // license cap = max(included, expected usage) + this %, so nobody is blocked by a busy month
   // A quote for N vehicles allows N + this % before the license blocks new
   // vehicles, so an extra car or two never stops a customer.
@@ -41,10 +41,12 @@ const DEFAULT_PRICING = {
 
 const DEFAULT_COSTS = {
   avgScansPerVehicleMonth: 6, // default expected usage when the customer can't say (short-term rental: check-out + check-in)
-  aiPerInspection: 0.035, // € — Gemini Flash, comparison mode (~70 images + ~4k output tokens ≈ 0.02-0.03 €)
-  plateScanPerInspection: 0.01, // € — plate OCR (only when the inspection starts from a plate scan)
+  // Gemini Flash, comparison mode: ~60 images × ~516 tokens ≈ 32k input tokens ($0.30/M ≈ $0.01)
+  // + ~6k output/thinking tokens ($2.50/M ≈ $0.015) ≈ 0.025 €.
+  aiPerInspection: 0.025,
+  plateScanPerInspection: 0.005, // € — plate OCR (only when the inspection starts from a plate scan)
   sivLookupPerVehicle: 0.1, // € — registry lookup, once per new vehicle
-  storageMbPerInspection: 8, // MB of photos per inspection
+  storageMbPerInspection: 6, // MB of photos per inspection (~30 views × ~200 KB)
   storagePerGbYear: 0.35, // € / GB / year (Cloud Storage europe-west9 + operations)
   photoRetentionYears: 3, // photos kept this long: one year of inspections is stored for N years
   infraPerCompanyYear: 40, // € / year — share of hosting (Vercel Pro), monitoring, email
@@ -166,7 +168,10 @@ function computeQuote(rawInputs, pricing = DEFAULT_PRICING, costs = DEFAULT_COST
   const capPerVehicle = Math.ceil(Math.max(included, expected) * (1 + (pricing.usageCapBufferPct ?? 50) / 100))
   const fairUseScansPerMonth = maxVehicles * capPerVehicle
   lines.push({
-    label: `Inspections IA : ${fr(Math.max(included, expected), 1)} / véhicule / mois incluses (usage raisonnable : ${fr(fairUseScansPerMonth)} / mois au total)`,
+    label:
+      extraPerVehicleMonth > 0
+        ? `Inspections IA : ${fr(included)} incluses + ${fr(extraPerVehicleMonth, 1)} du pack = ${fr(expected, 1)} / véhicule / mois (usage raisonnable : ${fr(fairUseScansPerMonth)} / mois au total)`
+        : `Inspections IA : jusqu'à ${fr(included)} / véhicule / mois incluses (usage raisonnable : ${fr(fairUseScansPerMonth)} / mois au total)`,
     qty: 1,
     unit: 'inclus',
     unitPrice: 0,
@@ -224,11 +229,36 @@ function computeQuote(rawInputs, pricing = DEFAULT_PRICING, costs = DEFAULT_COST
   const atCap = scenarios[scenarios.length - 1]
   if (atCap.margin < 0) warnings.push('Un client au plafond de sa licence serait déficitaire : baissez la tolérance, relevez le prix de l’inspection supplémentaire ou réduisez la remise.')
 
-  // ---- market comparison ----
+  // ---- market comparison, like for like ----
+  // The benchmark has no API module and no custom services: compare the
+  // core offer only (license + vehicles + agencies + usage), after the
+  // same discounts.
+  const nonCore = lines.filter((l) => l.label.startsWith('Module API') || l.unit === 'personnalisé').reduce((sum, l) => sum + l.total, 0)
+  const afterDiscounts = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0)
+  const discountFactor = subtotal ? afterDiscounts / subtotal : 1
+  const coreHT = round2(Math.max(totalHT - nonCore * discountFactor, 0))
   const bracket = MARKET_BENCHMARK.brackets.find((b) => input.vehicles <= b.upTo)
-  const market = bracket
-    ? { name: MARKET_BENCHMARK.name, source: MARKET_BENCHMARK.source, yearly: round2(bracket.yearly), savingPct: Math.round((1 - totalHT / bracket.yearly) * 100) }
-    : null
+  let market = null
+  if (bracket) {
+    const savingPct = Math.round((1 - coreHT / bracket.yearly) * 100)
+    // Commercial discount that would put the core offer 10 % under the benchmark.
+    const coreBeforeCommercial = input.discountPct ? coreHT / (1 - input.discountPct / 100) : coreHT
+    const neededDiscountPct = savingPct >= 10 ? 0 : Math.ceil((1 - (bracket.yearly * 0.9) / coreBeforeCommercial) * 100)
+    market = {
+      name: MARKET_BENCHMARK.name,
+      source: MARKET_BENCHMARK.source,
+      yearly: round2(bracket.yearly),
+      comparedHT: coreHT,
+      excludesNonCore: nonCore > 0,
+      savingPct,
+      neededDiscountPct: neededDiscountPct > 0 && neededDiscountPct <= 50 ? neededDiscountPct : null,
+    }
+    if (market.neededDiscountPct) {
+      // Margin if that discount is applied (minimum annual amount still applies).
+      const total = Math.max(pricing.minimumAnnual || 0, afterCommitment * (1 - market.neededDiscountPct / 100))
+      market.marginPctAtNeededDiscount = total ? Math.round(((total - base.total) / total) * 100) : 0
+    }
+  }
 
   return {
     input,
