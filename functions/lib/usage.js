@@ -8,6 +8,9 @@ function logUsage(req, res, next) {
   next()
   const companyId = req.auth?.companyId
   if (!companyId) return // platform_admin calls aren't tied to a company
+  // Photo uploads (dozens per inspection) would drown the metric and cost two
+  // writes each: the inspection itself is what's counted.
+  if (/\/photos$/.test(req.path)) return
 
   const endpoint = `${req.method} ${req.baseUrl}${req.path}`.replace(/\/[a-zA-Z0-9_-]{20,}/g, '/:id')
   const date = todayKey()

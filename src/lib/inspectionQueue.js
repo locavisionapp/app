@@ -1,5 +1,6 @@
 import { api, ApiError } from './api'
 import { auth } from './firebase'
+import { makeThumb } from './image'
 
 /**
  * Offline-safe inspection delivery.
@@ -114,7 +115,11 @@ export function uploadStepPhoto({ vehicleId, inspectionId, stepId, image, valida
   const previous = stepChains.get(key) || Promise.resolve()
   const p = previous
     .catch(() => {})
-    .then(() => api.uploadInspectionPhoto(vehicleId, inspectionId, { stepId, image, validate, pointName }))
+    .then(async () => {
+      // Thumbnail sent along (framing check, comparison reference, galleries).
+      const thumb = await makeThumb(image).catch(() => undefined)
+      return api.uploadInspectionPhoto(vehicleId, inspectionId, { stepId, image, thumb, validate, pointName })
+    })
   stepChains.set(key, p)
   p.catch(() => {}).finally(() => {
     if (stepChains.get(key) === p) stepChains.delete(key)

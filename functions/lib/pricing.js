@@ -30,7 +30,7 @@ const DEFAULT_PRICING = {
   // vehicle inspected twice a day) is billed as an "intensive pack" at
   // extraScanPrice, so heavy users pay for what they consume.
   fairUseScansPerVehicleMonth: 20,
-  extraScanPrice: 0.06, // € HT per inspection beyond the included ones (cost ≈ 0.036 €)
+  extraScanPrice: 0.04, // € HT per inspection beyond the included ones (cost ≈ 0.024 €)
   usageCapBufferPct: 50, // license cap = max(included, expected usage) + this %, so nobody is blocked by a busy month
   // A quote for N vehicles allows N + this % before the license blocks new
   // vehicles, so an extra car or two never stops a customer.
@@ -41,13 +41,14 @@ const DEFAULT_PRICING = {
 
 const DEFAULT_COSTS = {
   avgScansPerVehicleMonth: 6, // default expected usage when the customer can't say (short-term rental: check-out + check-in)
-  // Gemini Flash, comparison mode: ~60 images × ~516 tokens ≈ 32k input tokens ($0.30/M ≈ $0.01)
-  // + ~6k output/thinking tokens ($2.50/M ≈ $0.015) ≈ 0.025 €.
-  aiPerInspection: 0.025,
-  plateScanPerInspection: 0.005, // € — plate OCR (only when the inspection starts from a plate scan)
+  // Gemini Flash, comparison mode, after cost optimizations: ≤32 current
+  // photos (~516 tokens each) + reference thumbnails (~258 each) ≈ 26k input
+  // tokens ($0.30/M ≈ $0.008) + ≤3k reasoning + ~1.5k answer ($2.50/M ≈ $0.011).
+  aiPerInspection: 0.018,
+  plateScanPerInspection: 0.002, // € — Flash-Lite plate read, specialized OCR only as fallback; SIV cached
   sivLookupPerVehicle: 0.1, // € — registry lookup, once per new vehicle
-  storageMbPerInspection: 6, // MB of photos per inspection (~30 views × ~200 KB)
-  storagePerGbYear: 0.35, // € / GB / year (Cloud Storage europe-west9 + operations)
+  storageMbPerInspection: 8.5, // MB per inspection: ~30 views × ~200 KB + their 768px thumbnails
+  storagePerGbYear: 0.15, // € / GB / year, blended over the retention with cold storage classes (Standard → Nearline → Coldline)
   photoRetentionYears: 3, // photos kept this long: one year of inspections is stored for N years
   infraPerCompanyYear: 40, // € / year — share of hosting (Vercel Pro), monitoring, email
 }

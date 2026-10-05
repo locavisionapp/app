@@ -10,6 +10,7 @@ const {
   downloadInspectionPhotos,
   inspectionPhotoPath,
   toPhotoUrls,
+  existingThumbPaths,
   deleteVehiclePhotos,
   WEBHOOK_URL_TTL_MS,
 } = require('../lib/storage')
@@ -91,13 +92,19 @@ async function getVehicleOr404(companyId, vehicleId) {
  * change stored public URLs in `photos`, passed through unchanged.
  */
 async function serializeInspection(req, id, data, ttlMs) {
-  const { photoPaths, photos, signatures, ...rest } = data
-  const urls = await toPhotoUrls(photoPaths || photos || [], { ttlMs, baseUrl: `${req.protocol}://${req.get('host')}` })
+  const { photoPaths, photos, signatures, thumbPaths, ...rest } = data
+  const baseUrl = `${req.protocol}://${req.get('host')}`
+  const [urls, thumbUrls] = await Promise.all([
+    toPhotoUrls(photoPaths || photos || [], { ttlMs, baseUrl }),
+    thumbPaths ? toPhotoUrls(thumbPaths.map((t) => t || ''), { ttlMs, baseUrl }) : null,
+  ])
   // Signature images only go into the PDF report; the API exposes who signed and when.
   const signed = Object.fromEntries(
     Object.entries(signatures || {}).map(([role, sig]) => [role, { name: sig.name, email: sig.email || null, signedAt: sig.signedAt }])
   )
-  return { id, ...rest, signatures: signed, photos: urls, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
+  // `thumbs[i]`: lighter version of `photos[i]` for galleries (null = none, use the photo).
+  const thumbs = thumbUrls ? thumbUrls.map((u, i) => (thumbPaths[i] ? u : null)) : urls.map(() => null)
+  return { id, ...rest, signatures: signed, photos: urls, thumbs, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
 }
 
 // The AI request carries every photo inline; keep it well under Gemini's
@@ -107,6 +114,20 @@ const DAMAGE_STATUSES = ['open', 'repaired', 'dismissed']
 
 function damageId() {
   return `dmg_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+}
+
+const MAX_AI_PHOTOS = 32
+
+/** Indexes of the photos sent to the model: all non walk-around steps, then tour views evenly spread. */
+function selectForAnalysis(stepIds) {
+  const all = stepIds.map((_, i) => i)
+  if (all.length <= MAX_AI_PHOTOS) return all
+  const tour = all.filter((i) => stepIds[i].startsWith('tour-'))
+  const others = all.filter((i) => !stepIds[i].startsWith('tour-')).slice(0, MAX_AI_PHOTOS)
+  const room = MAX_AI_PHOTOS - others.length
+  const step = tour.length / Math.max(room, 1)
+  const picked = Array.from({ length: Math.min(room, tour.length) }, (_, k) => tour[Math.floor(k * step)])
+  return [...picked, ...others].sort((a, b) => a - b)
 }
 
 /** Evenly keeps as many items as fit in `budget` bytes (sizes from `sizeOf`). */
@@ -163,11 +184,15 @@ function statusFromDamages(damages, comparison, aiStatus) {
 async function serializeVehicle(req, doc) {
   const data = doc.data()
   const known = data.knownDamages || []
-  const urls = await toPhotoUrls(known.map((d) => d.photoPath || ''), { baseUrl: `${req.protocol}://${req.get('host')}` })
+  const baseUrl = `${req.protocol}://${req.get('host')}`
+  const [urls, thumbs] = await Promise.all([
+    toPhotoUrls(known.map((d) => d.photoPath || ''), { baseUrl }),
+    toPhotoUrls(known.map((d) => d.thumbPath || ''), { baseUrl }),
+  ])
   return {
     id: doc.id,
     ...data,
-    knownDamages: known.map(({ photoPath, ...d }, i) => ({ ...d, photoUrl: photoPath ? urls[i] : null })),
+    knownDamages: known.map(({ photoPath, thumbPath, ...d }, i) => ({ ...d, photoUrl: photoPath ? urls[i] : null, thumbUrl: thumbPath ? thumbs[i] : null })),
   }
 }
 
@@ -576,16 +601,21 @@ router.post(
     const existing = await vehicleDoc.ref.collection('inspections').doc(inspectionId).get()
     if (existing.exists) throw new ApiError(409, 'Cette inspection est déjà terminée.')
 
+    const thumb = typeof req.body.thumb === 'string' ? req.body.thumb : null
+    // Framing check on the thumbnail: same verdict, a quarter of the image tokens.
     const validation = req.body.validate
-      ? validateCapture(req.body.image, String(req.body.pointName || stepId).slice(0, 80), getCategoryLabel(vehicleDoc.data().category)).catch((e) => {
+      ? validateCapture(thumb || req.body.image, String(req.body.pointName || stepId).slice(0, 80), getCategoryLabel(vehicleDoc.data().category)).catch((e) => {
           console.warn('[photos] AI framing check failed, letting capture through', e.message)
           return { valid: true }
         })
       : Promise.resolve(null)
 
     const [path, check] = await Promise.all([
-      uploadInspectionPhoto(req.auth.companyId, req.params.id, inspectionId, stepId, req.body.image),
+      uploadInspectionPhoto(req.auth.companyId, req.params.id, inspectionId, stepId, req.body.image, { thumb }),
       validation,
+      // Photos of an inspection that's never submitted get purged (see
+      // /internal/cleanup): remember it until the inspection is recorded.
+      db.collection('pendingInspections').doc(inspectionId).create({ companyId: req.auth.companyId, vehicleId: req.params.id, createdAt: Date.now() }).catch(() => {}),
     ])
     res.status(201).json({ stepId, stored: !!path, ...(check ? { valid: check.valid !== false, reason: check.reason || null, instruction: check.instruction || null } : {}) })
   })
@@ -689,22 +719,28 @@ router.post(
         const refPaths = refDoc.exists ? refDoc.data().photoPaths || [] : []
         if (refPaths.length) {
           referenceInspectionId = refDoc.id
-          reference = (await downloadInspectionPhotos(refPaths)).filter((p) => !p.missing)
+          // References only give context: thumbnails are enough (~half the tokens).
+          reference = (await downloadInspectionPhotos(refPaths, { preferThumbs: true })).filter((p) => !p.missing)
         }
       }
       const comparison = reference.length > 0 || knownOpen.length > 0
-      const currentBytes = images.reduce((sum, img) => sum + img.image.length * 0.75, 0)
+      const currentBytes = selectForAnalysis(stepIds).reduce((sum, i) => sum + images[i].image.length * 0.75, 0)
       reference = fitToBudget(reference, (img) => img.image.length * 0.75, Math.max(AI_IMAGE_BUDGET_BYTES - currentBytes, 2 * 1024 * 1024))
 
+      // Cost cap: at most MAX_AI_PHOTOS current photos go to the model —
+      // every close-up / guided step, then walk-around views spread evenly.
+      // `aiToPhoto[i]` maps the model's photo index back to the stored photo.
+      const aiToPhoto = selectForAnalysis(stepIds)
+      const aiImages = aiToPhoto.map((i) => images[i])
       const analysis = await analyzeInspection({
-        current: images,
+        current: aiImages,
         reference,
         knownDamages: knownOpen,
         dismissedDamages: dismissed,
         vehicleType: getCategoryLabel(vehicleData.category),
       })
       const knownIds = new Set([...knownOpen, ...dismissed].map((d) => d.id))
-      const damages = normalizeDamages(analysis.damages, images.length, knownIds)
+      const damages = normalizeDamages(analysis.damages, aiImages.length, knownIds).map((d) => ({ ...d, photoIndex: d.photoIndex == null ? null : aiToPhoto[d.photoIndex] }))
       const openIds = new Set(knownOpen.map((d) => d.id))
       const missingKnownIds = Array.isArray(analysis.missing_known_ids)
         ? analysis.missing_known_ids.map(String).filter((id) => openIds.has(id) && !damages.some((d) => d.knownId === id))
@@ -725,6 +761,7 @@ router.post(
         missingKnownIds,
         review: { status: damages.some((d) => d.change !== 'same') ? 'pending' : 'validated' },
         photoPaths,
+        thumbPaths: await existingThumbPaths(photoPaths),
         photoSteps: stepIds,
         mileage,
         source: req.auth.via === 'apikey' ? 'api' : 'web',
@@ -737,6 +774,7 @@ router.post(
       }
 
       await inspectionRef.set(inspection)
+      db.collection('pendingInspections').doc(inspectionId).delete().catch(() => {})
       await vehicleRef.set(
         {
           lastStatus: inspection.status,
@@ -810,6 +848,7 @@ router.post(
               severity: Math.max(d.severity, k.severity || 1),
               description: d.description,
               photoPath: photoPath || k.photoPath,
+              thumbPath: (d.photoIndex != null ? (inspection.thumbPaths || [])[d.photoIndex] : null) || (photoPath ? null : k.thumbPath || null),
               box: d.box || k.box,
               lastSeenAt: inspection.createdAt,
               worsenedAt: inspection.createdAt,
@@ -826,6 +865,7 @@ router.post(
           severity: d.severity,
           description: d.description,
           photoPath,
+          thumbPath: d.photoIndex != null ? (inspection.thumbPaths || [])[d.photoIndex] || null : null,
           box: d.box,
           inspectionId: inspectionSnap.id,
           firstSeenAt: inspection.createdAt,
@@ -892,7 +932,15 @@ async function renderReport(req) {
   const { vehicle, inspection } = await loadInspection(req)
   let photos
   if (inspection.photoPaths?.length) {
-    photos = (await downloadInspectionPhotos(inspection.photoPaths)).map((p) => ({ buffer: p.missing ? null : Buffer.from(p.image, 'base64') }))
+    // Full resolution only where a defect is shown; thumbnails for the annex
+    // (smaller PDF, faster email, less storage egress).
+    const defectPhotos = new Set((inspection.damages || []).map((d) => d.photoIndex).filter((i) => i != null))
+    photos = await Promise.all(
+      inspection.photoPaths.map(async (path, i) => {
+        const [p] = await downloadInspectionPhotos([path], { preferThumbs: !defectPhotos.has(i) })
+        return { buffer: p.missing ? null : Buffer.from(p.image, 'base64') }
+      })
+    )
   } else {
     // Inspections from before private storage: public URLs.
     photos = await Promise.all(

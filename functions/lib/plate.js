@@ -1,17 +1,35 @@
 /**
  * License plate identification pipeline, run server-side (third-party keys
- * never leave Cloud Functions / the Vercel function):
- * 1. PlateRecognizer -> OCR the photo -> plate text
- * 2. RapidAPI SIV    -> plate text -> vehicle spec sheet
- * 3. Gemini fallback -> if the external APIs fail
+ * never leave Cloud Functions / the Vercel function), cheapest step first:
+ * 1. Gemini Flash-Lite reads the plate (~0.0001 €); accepted only for a
+ *    confident, well-formed French plate — otherwise PlateRecognizer
+ *    (specialized OCR, paid per lookup beyond its free tier) reads it.
+ * 2. SIV registry -> spec sheet, cached forever per plate (shared by all
+ *    customers: a plate is never paid for twice).
+ * 3. Gemini fallback -> identify the vehicle from the photo if all else fails.
  */
-const { extractVehicleInfoFromPlate, enrichVehicleSpecs } = require('./ai')
+const { extractVehicleInfoFromPlate, enrichVehicleSpecs, readPlateText } = require('./ai')
+const { db } = require('./db')
 const { fetchWithTimeout } = require('./fetchWithTimeout')
 
 const PLATE_RECOGNIZER_TOKEN = process.env.PLATE_RECOGNIZER_TOKEN
 const RAPIDAPI_KEY = process.env.SIV_API_KEY
 
+const SIV_PLATE = /^[A-Z]{2}-?\d{3}-?[A-Z]{2}$/
+
+/** Plate text from a photo: cheap AI read when it's unambiguous, specialized OCR otherwise. */
 async function ocrPlateFromImage(imageBase64) {
+  try {
+    const read = await readPlateText(imageBase64)
+    const plate = String(read?.plate || '').toUpperCase().replace(/\s+/g, '')
+    if (SIV_PLATE.test(plate) && Number(read?.confidence) >= 0.85) return plate
+  } catch (e) {
+    console.warn('[Pipeline] AI plate read skipped:', e.message)
+  }
+  return ocrWithPlateRecognizer(imageBase64)
+}
+
+async function ocrWithPlateRecognizer(imageBase64) {
   if (!PLATE_RECOGNIZER_TOKEN) return null
 
   const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
@@ -32,7 +50,27 @@ async function ocrPlateFromImage(imageBase64) {
   return best?.plate?.toUpperCase() || null
 }
 
+/**
+ * Registry data rarely changes for a given plate: cache it (no expiry) so
+ * each plate costs one SIV call ever, across all customers. Only technical
+ * vehicle data is cached — nothing about the owner.
+ */
 async function fetchVehicleDataFromSIV(plate) {
+  if (!plate) return null
+  const key = plate.replace(/[\s-]/g, '').toUpperCase()
+  const cacheRef = db.collection('sivCache').doc(key)
+  try {
+    const cached = await cacheRef.get()
+    if (cached.exists) return { ...cached.data().data, licensePlate: plate }
+  } catch (e) {
+    console.warn('[SIV] cache read failed:', e.message)
+  }
+  const data = await fetchVehicleDataFromSIVProviders(plate)
+  if (data?.brand) cacheRef.set({ data, cachedAt: Date.now() }).catch((e) => console.warn('[SIV] cache write failed:', e.message))
+  return data
+}
+
+async function fetchVehicleDataFromSIVProviders(plate) {
   if (!RAPIDAPI_KEY || !plate) return null
 
   const cleanPlate = plate.replace(/[\s-]/g, '').toUpperCase()

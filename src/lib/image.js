@@ -104,3 +104,23 @@ export function thumbDistance(a, b) {
   for (let i = 0; i < a.length; i += 1) d += Math.abs(a[i] - b[i])
   return d / a.length
 }
+
+// Thumbnails (768px, the largest size that still fits in a single image
+// tile for the AI model): used for framing checks, as comparison references
+// and in galleries — a fraction of the cost and bandwidth of full photos.
+export const THUMB = { maxSide: 768, quality: 0.7 }
+
+/** Builds a thumbnail JPEG data URL from a full-size JPEG data URL. */
+export async function makeThumb(dataUrl, { maxSide, quality } = THUMB) {
+  const img = new Image()
+  img.src = dataUrl
+  await img.decode()
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(img.naturalWidth * scale)
+  canvas.height = Math.round(img.naturalHeight * scale)
+  const ctx = canvas.getContext('2d')
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', quality)
+}

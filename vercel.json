@@ -3,6 +3,7 @@
   "functions": {
     "api/handler.js": { "maxDuration": 120, "includeFiles": "node_modules/pdfkit/js/data/**" }
   },
+  "crons": [{ "path": "/v1/internal/cleanup", "schedule": "0 3 * * *" }],
   "headers": [
     {
       "source": "/(.*)",

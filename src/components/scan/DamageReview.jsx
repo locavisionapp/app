@@ -19,7 +19,7 @@ function severityStatus(severity) {
  * ymax, xmax] in 0-1000, as returned by the model). The container takes the
  * image's own aspect ratio so the box lines up exactly. Tap = full screen.
  */
-export function DamagePhoto({ url, box, className, label }) {
+export function DamagePhoto({ url, thumbUrl, box, className, label }) {
   const [ratio, setRatio] = useState(4 / 3)
   const [open, setOpen] = useState(false)
   if (!url) return <div className={cn('flex items-center justify-center rounded-lg bg-slate-100 text-[10px] text-slate-400', className)}>Pas de photo</div>
@@ -27,7 +27,7 @@ export function DamagePhoto({ url, box, className, label }) {
   const frame = (big) => (
     <div className="relative w-full" style={{ aspectRatio: ratio }}>
       <img
-        src={url}
+        src={big ? url : thumbUrl || url}
         alt={label || 'Photo du défaut'}
         loading="lazy"
         onLoad={(e) => e.currentTarget.naturalWidth && setRatio(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
@@ -64,7 +64,7 @@ export function DamagePhoto({ url, box, className, label }) {
   )
 }
 
-function DamageRow({ damage, photoUrl, checked, onToggle, readonly, decision }) {
+function DamageRow({ damage, photoUrl, thumbUrl, checked, onToggle, readonly, decision }) {
   return (
     <div className={cn('flex gap-3 rounded-xl border p-3', checked === false ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-slate-200 bg-white')}>
       {!readonly && (
@@ -76,7 +76,7 @@ function DamageRow({ damage, photoUrl, checked, onToggle, readonly, decision }) 
           aria-label={`Confirmer : ${damage.location}`}
         />
       )}
-      <DamagePhoto url={photoUrl} box={damage.box} className="w-28 shrink-0" label={`${damage.location} — ${damage.description}`} />
+      <DamagePhoto url={photoUrl} thumbUrl={thumbUrl} box={damage.box} className="w-28 shrink-0" label={`${damage.location} — ${damage.description}`} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <p className="font-medium text-slate-900">{damage.location}</p>
@@ -109,6 +109,7 @@ export function DamageReview({ vehicleId, inspection, knownDamages = [], onUpdat
   const toast = useToast()
   const damages = inspection.damages || []
   const photos = inspection.photos || []
+  const thumbs = inspection.thumbs || []
   const toDecide = damages.filter((d) => d.change !== 'same')
   const matched = damages.filter((d) => d.change === 'same')
   const pending = inspection.review?.status === 'pending'
@@ -184,6 +185,7 @@ export function DamageReview({ vehicleId, inspection, knownDamages = [], onUpdat
               key={d.id}
               damage={d}
               photoUrl={d.photoIndex != null ? photos[d.photoIndex] : null}
+              thumbUrl={d.photoIndex != null ? thumbs[d.photoIndex] : null}
               readonly={!pending}
               checked={pending ? !!checked[d.id] : undefined}
               onToggle={() => setChecked((c) => ({ ...c, [d.id]: !c[d.id] }))}
@@ -226,7 +228,7 @@ export function DamageReview({ vehicleId, inspection, knownDamages = [], onUpdat
           {showMatched && (
             <div className="mt-2 space-y-2">
               {matched.map((d) => (
-                <DamageRow key={d.id} damage={d} photoUrl={d.photoIndex != null ? photos[d.photoIndex] : null} readonly />
+                <DamageRow key={d.id} damage={d} photoUrl={d.photoIndex != null ? photos[d.photoIndex] : null} thumbUrl={d.photoIndex != null ? thumbs[d.photoIndex] : null} readonly />
               ))}
             </div>
           )}

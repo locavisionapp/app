@@ -7,7 +7,8 @@ const { logUsage } = require('./lib/usage')
 const { auditLog } = require('./lib/audit')
 const { asyncRoute } = require('./lib/asyncRoute')
 const { MODULES } = require('./lib/config')
-const { readSignedPhoto } = require('./lib/storage')
+const { readSignedPhoto, deleteInspectionPhotos } = require('./lib/storage')
+const { db } = require('./lib/db')
 const { emailEnabled } = require('./lib/email')
 
 const vehiclesRoutes = require('./routes/vehicles')
@@ -58,6 +59,33 @@ app.get(
     res.set('Content-Type', 'image/jpeg')
     res.set('Cache-Control', 'private, max-age=3600')
     res.send(Buffer.from(data))
+  })
+)
+
+// Daily maintenance (Vercel Cron, see vercel.json), authenticated by the
+// CRON_SECRET Vercel sends as a Bearer token:
+// photos of inspections never submitted after 14 days (cancelled scans,
+// lost phones) are deleted — the offline queue retries well within that.
+const ABANDONED_AFTER_MS = 14 * 24 * 60 * 60 * 1000
+app.get(
+  '/v1/internal/cleanup',
+  asyncRoute(async (req, res) => {
+    if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+      return res.status(401).json({ error: 'Unauthorized.' })
+    }
+    const cutoff = Date.now() - ABANDONED_AFTER_MS
+    const snap = await db.collection('pendingInspections').where('createdAt', '<', cutoff).limit(200).get()
+    let purged = 0
+    for (const doc of snap.docs) {
+      const { companyId, vehicleId } = doc.data()
+      const recorded = await db.collection('companies').doc(companyId).collection('vehicles').doc(vehicleId).collection('inspections').doc(doc.id).get()
+      if (!recorded.exists) {
+        await deleteInspectionPhotos(companyId, vehicleId, doc.id)
+        purged += 1
+      }
+      await doc.ref.delete()
+    }
+    res.json({ checked: snap.size, purged })
   })
 )
 

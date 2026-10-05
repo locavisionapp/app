@@ -191,6 +191,7 @@ export const api = {
   getQuotePdf: (id, quoteId) => apiFetchBlob(`/v1/companies/${id}/quotes/${quoteId}/pdf`),
   simulatePricing: (input) => apiFetch('/v1/pricing/simulate', { method: 'POST', body: input }),
   getBillingSettings: () => apiFetch('/v1/platform/billing'),
+  optimizeStorage: () => apiFetch('/v1/platform/storage/optimize', { method: 'POST' }),
   saveBillingSettings: (settings) => apiFetch('/v1/platform/billing', { method: 'PUT', body: settings }),
   markQuotePaid: (id, quoteId, payment) => apiFetch(`/v1/companies/${id}/quotes/${quoteId}/mark-paid`, { method: 'PUT', body: payment }),
   getUsage: (range = '30d') => apiFetch(`/v1/usage?range=${range}`),

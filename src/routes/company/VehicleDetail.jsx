@@ -194,7 +194,7 @@ export default function VehicleDetail() {
           <div className="space-y-2">
             {openDamages.map((d) => (
               <div key={d.id} className="flex gap-3 rounded-xl border border-slate-200 p-3">
-                <DamagePhoto url={d.photoUrl} box={d.box} className="w-24 shrink-0" label={`${d.location} — ${d.description}`} />
+                <DamagePhoto url={d.photoUrl} thumbUrl={d.thumbUrl} box={d.box} className="w-24 shrink-0" label={`${d.location} — ${d.description}`} />
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-slate-900">{d.location}</p>
                   <p className="text-sm text-slate-500">{d.description}</p>
@@ -318,7 +318,8 @@ export default function VehicleDetail() {
 function InspectionCard({ inspection: insp, vehicle, vehicleId, knownDamages, onReviewed }) {
   const pending = insp.review?.status === 'pending'
   const [open, setOpen] = useState(pending)
-  const photos = (insp.photos || []).filter(Boolean)
+  // Galleries load the light thumbnail; the link opens the full photo.
+  const photos = (insp.photos || []).map((url, i) => ({ url, thumb: insp.thumbs?.[i] || url })).filter((p) => p.url)
   return (
     <Card className={pending ? 'overflow-hidden border-status-warn' : 'overflow-hidden'}>
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 p-4 text-left" aria-expanded={open}>
@@ -350,9 +351,9 @@ function InspectionCard({ inspection: insp, vehicle, vehicleId, knownDamages, on
             <details>
               <summary className="cursor-pointer text-sm text-slate-500 hover:text-brand-700">Toutes les photos ({photos.length})</summary>
               <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-6">
-                {photos.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
-                    <img src={url} alt={`Photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
+                {photos.map((p, i) => (
+                  <a key={i} href={p.url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
+                    <img src={p.thumb} alt={`Photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
                   </a>
                 ))}
               </div>

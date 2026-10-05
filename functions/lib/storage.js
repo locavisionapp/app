@@ -25,14 +25,20 @@ const READ_URL_TTL_MS = 60 * 60 * 1000 // 1h, for the web app
 const WEBHOOK_URL_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days, for CRM webhooks
 
 const PATH_PATTERN = /^companies\/([^/]+)\/vehicles\/([^/]+)\/inspections\/([^/]+)\/([^/]+)\.jpg$/
+const MAX_THUMB_BYTES = 250 * 1024
 
-function decodeImage(imageBase64) {
+/** Path of the 768px thumbnail stored next to a photo. */
+function thumbPathOf(path) {
+  return path.replace(/\.jpg$/, '.thumb.jpg')
+}
+
+function decodeImage(imageBase64, maxBytes = MAX_IMAGE_BYTES) {
   if (typeof imageBase64 !== 'string') throw new ApiError(400, 'Image manquante.')
   const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
   const buffer = Buffer.from(base64Data, 'base64')
   if (buffer.length === 0) throw new ApiError(400, 'Photo vide ou illisible.')
-  if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new ApiError(413, `Photo trop volumineuse (${Math.round(MAX_IMAGE_BYTES / 1024)} Ko max).`)
+  if (buffer.length > maxBytes) {
+    throw new ApiError(413, `Photo trop volumineuse (${Math.round(maxBytes / 1024)} Ko max).`)
   }
   return buffer
 }
@@ -90,44 +96,76 @@ async function readSignedPhoto(companyId, docId, exp, sig) {
 
 // ---------- public API ----------
 
-/** Stores one inspection photo (private) and returns its path. */
-async function uploadInspectionPhoto(companyId, vehicleId, inspectionId, stepId, imageBase64) {
-  const buffer = decodeImage(imageBase64)
-  const path = inspectionPhotoPath(companyId, vehicleId, inspectionId, stepId)
+async function storeBuffer(companyId, vehicleId, path, buffer) {
   if (BACKEND === 'gcs') {
     await storage.bucket().file(path).save(buffer, { metadata: { contentType: 'image/jpeg' }, resumable: false })
-  } else {
-    const ref = photoDocFromPath(path)
-    await photosCol(companyId).doc(ref.docId).set({
-      vehicleId,
-      inspectionId: ref.inspectionId,
-      stepId: ref.stepId,
-      contentType: 'image/jpeg',
-      size: buffer.length,
-      data: buffer,
-      createdAt: Date.now(),
-    })
+    return
   }
+  const ref = photoDocFromPath(path)
+  await photosCol(companyId).doc(ref.docId).set({
+    vehicleId,
+    inspectionId: ref.inspectionId,
+    stepId: ref.stepId,
+    contentType: 'image/jpeg',
+    size: buffer.length,
+    data: buffer,
+    createdAt: Date.now(),
+  })
+}
+
+/** Stores one inspection photo (private) — and its thumbnail when given — and returns the photo path. */
+async function uploadInspectionPhoto(companyId, vehicleId, inspectionId, stepId, imageBase64, { thumb } = {}) {
+  const buffer = decodeImage(imageBase64)
+  const thumbBuffer = typeof thumb === 'string' && thumb ? decodeImage(thumb, MAX_THUMB_BYTES) : null
+  const path = inspectionPhotoPath(companyId, vehicleId, inspectionId, stepId)
+  await Promise.all([
+    storeBuffer(companyId, vehicleId, path, buffer),
+    thumbBuffer ? storeBuffer(companyId, vehicleId, thumbPathOf(path), thumbBuffer) : null,
+  ])
   return path
 }
 
-/** Downloads previously uploaded photos as base64 (for the AI analysis). Missing files are reported, not thrown. */
-async function downloadInspectionPhotos(paths) {
+async function readOne(path) {
+  if (BACKEND === 'gcs') {
+    try {
+      const [buffer] = await storage.bucket().file(path).download()
+      return buffer
+    } catch (e) {
+      if (e.code === 404) return null
+      throw e
+    }
+  }
+  const ref = photoDocFromPath(path)
+  const doc = ref && (await photosCol(ref.companyId).doc(ref.docId).get())
+  return doc?.exists ? Buffer.from(doc.data().data) : null
+}
+
+/** Which thumbnails exist, for a list of photo paths (array of thumb path | null). */
+async function existingThumbPaths(paths) {
   return Promise.all(
     paths.map(async (path) => {
+      const thumb = thumbPathOf(path)
       if (BACKEND === 'gcs') {
-        try {
-          const [buffer] = await storage.bucket().file(path).download()
-          return { path, image: buffer.toString('base64') }
-        } catch (e) {
-          if (e.code === 404) return { path, missing: true }
-          throw e
-        }
+        const [exists] = await storage.bucket().file(thumb).exists()
+        return exists ? thumb : null
       }
-      const ref = photoDocFromPath(path)
-      const doc = ref && (await photosCol(ref.companyId).doc(ref.docId).get())
-      if (!doc?.exists) return { path, missing: true }
-      return { path, image: Buffer.from(doc.data().data).toString('base64') }
+      const ref = photoDocFromPath(thumb)
+      const doc = await photosCol(ref.companyId).doc(ref.docId).get()
+      return doc.exists ? thumb : null
+    })
+  )
+}
+
+/**
+ * Downloads previously uploaded photos as base64 (for the AI analysis).
+ * `preferThumbs` reads the thumbnail when there is one (comparison
+ * references). Missing files are reported, not thrown.
+ */
+async function downloadInspectionPhotos(paths, { preferThumbs = false } = {}) {
+  return Promise.all(
+    paths.map(async (path) => {
+      const buffer = (preferThumbs && (await readOne(thumbPathOf(path)))) || (await readOne(path))
+      return buffer ? { path, image: buffer.toString('base64') } : { path, missing: true }
     })
   )
 }
@@ -177,6 +215,36 @@ async function deleteVehiclePhotos(companyId, vehicleId) {
   }
 }
 
+/** Deletes the photos (and thumbnails) of one inspection — abandoned uploads. */
+async function deleteInspectionPhotos(companyId, vehicleId, inspectionId) {
+  if (BACKEND === 'gcs') {
+    await storage.bucket().deleteFiles({ prefix: `companies/${companyId}/vehicles/${vehicleId}/inspections/${safeSegment(inspectionId)}/`, force: true })
+    return
+  }
+  const snap = await photosCol(companyId).where('inspectionId', '==', safeSegment(inspectionId)).select().get()
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = db.batch()
+    snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref))
+    await batch.commit()
+  }
+}
+
+/**
+ * Cheaper storage classes for old photos (Cloud Storage backend): photos are
+ * read often in their first weeks (review, comparison, reports), rarely
+ * after. Nearline after 60 days (~45 % cheaper), Coldline after a year
+ * (~75 % cheaper); reading an old photo stays possible (small per-GB fee).
+ */
+async function applyColdStorageLifecycle() {
+  if (BACKEND !== 'gcs') throw new ApiError(400, 'Disponible uniquement avec PHOTO_STORAGE=gcs (Firebase Storage).')
+  const rules = [
+    { action: { type: 'SetStorageClass', storageClass: 'NEARLINE' }, condition: { age: 60, matchesStorageClass: ['STANDARD'] } },
+    { action: { type: 'SetStorageClass', storageClass: 'COLDLINE' }, condition: { age: 365, matchesStorageClass: ['NEARLINE'] } },
+  ]
+  await storage.bucket().setMetadata({ lifecycle: { rule: rules } })
+  return rules
+}
+
 /** Deletes every photo of a company. Firestore-backend photos already go with the company's recursiveDelete. */
 async function deleteCompanyPhotos(companyId) {
   if (BACKEND !== 'gcs') return
@@ -189,6 +257,10 @@ async function deleteCompanyPhotos(companyId) {
 
 module.exports = {
   BACKEND,
+  deleteInspectionPhotos,
+  applyColdStorageLifecycle,
+  thumbPathOf,
+  existingThumbPaths,
   uploadInspectionPhoto,
   downloadInspectionPhotos,
   inspectionPhotoPath,

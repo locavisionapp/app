@@ -5,7 +5,7 @@ const { requireRole, generateApiKey, hashApiKey } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
 const { API_COST_PER_CALL_EUR, MODULES } = require('../lib/config')
 const { slugify, synthesizeEmail } = require('../lib/slug')
-const { deleteCompanyPhotos } = require('../lib/storage')
+const { deleteCompanyPhotos, applyColdStorageLifecycle } = require('../lib/storage')
 const { computeQuote } = require('../lib/pricing')
 const { getBillingSettings, saveBillingSettings, nextDocumentNumber } = require('../lib/billing')
 const { sendQuotePdf } = require('../lib/quotePdf')
@@ -185,6 +185,20 @@ router.put(
   platformOnly,
   asyncRoute(async (req, res) => {
     res.json(await saveBillingSettings(req.body))
+  })
+)
+
+router.post(
+  '/platform/storage/optimize',
+  platformOnly,
+  asyncRoute(async (req, res) => {
+    try {
+      res.json({ ok: true, rules: await applyColdStorageLifecycle() })
+    } catch (e) {
+      if (e.expose) throw e
+      console.error('[storage] lifecycle update failed', e.message)
+      throw new ApiError(502, "Impossible de modifier le bucket (droits du compte de service ?). À défaut : console Google Cloud → Cloud Storage → bucket → Cycle de vie.")
+    }
   })
 )
 

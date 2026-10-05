@@ -11,6 +11,10 @@ const MODEL_PRIORITY = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemi
 
 let availableModels = []
 
+// Reasoning-token cap for the damage analysis (env-tunable without a deploy
+// of code: raise it if precision ever drops, lower it to save more).
+const ANALYSIS_THINKING_BUDGET = Number(process.env.ANALYSIS_THINKING_BUDGET) || 3072
+
 async function discoverModels() {
   if (availableModels.length > 0) return
   if (!API_KEY) throw new Error('Missing server-side Gemini API key.')
@@ -31,40 +35,58 @@ async function discoverModels() {
   }
 }
 
+/** Model fallback order for a tier: 'lite' = cheapest model first (simple checks), 'standard' = best value first. */
+function modelsFor(tier) {
+  if (tier !== 'lite') return availableModels
+  const lite = availableModels.filter((m) => m.includes('lite'))
+  return [...lite, ...availableModels.filter((m) => !lite.includes(m))]
+}
+
 /**
- * Calls Gemini, falling back through availableModels on quota/availability
+ * Calls Gemini, falling back through the tier's models on quota/availability
  * errors. `timeoutMs` is per attempt, `maxAttempts` caps the fallback chain
  * and `budgetMs` caps the whole call (all attempts together), so it can never
  * outlive the serverless function's own time limit (vercel.json maxDuration).
+ *
+ * Cost controls: `tier: 'lite'` routes simple tasks to Flash-Lite (~3x
+ * cheaper input, ~6x cheaper output); `thinkingBudget` caps the model's
+ * internal reasoning tokens, billed as output — the most expensive part
+ * (0 = no reasoning, for tasks that don't need it).
  */
-async function callGemini(contents, { timeoutMs = 20000, maxAttempts = 3, budgetMs = 45000, maxOutputTokens = 8192, deadline } = {}, retryIndex = 0) {
-  deadline = deadline || Date.now() + budgetMs
+async function callGemini(contents, opts = {}, retryIndex = 0) {
+  const { timeoutMs = 20000, maxAttempts = 3, budgetMs = 45000, maxOutputTokens = 8192, tier = 'standard', thinkingBudget } = opts
+  const deadline = opts.deadline || Date.now() + budgetMs
   await discoverModels()
-  const lastIndex = Math.min(availableModels.length, maxAttempts) - 1
+  const models = modelsFor(tier)
+  const lastIndex = Math.min(models.length, maxAttempts) - 1
   if (retryIndex > lastIndex) throw new Error('Gemini: all model fallbacks exhausted.')
   const attemptTimeout = Math.min(timeoutMs, deadline - Date.now())
   if (attemptTimeout < 2000) throw new Error('Gemini: time budget exhausted.')
-  const modelId = availableModels[retryIndex]
+  const modelId = models[retryIndex]
   const url = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${API_KEY}`
+  const generationConfig = { temperature: 0.1, topP: 0.95, maxOutputTokens, response_mime_type: 'application/json' }
+  if (thinkingBudget != null && !opts.noThinkingConfig) generationConfig.thinkingConfig = { thinkingBudget }
   try {
     const response = await fetchWithTimeout(
       url,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents, generationConfig: { temperature: 0.1, topP: 0.95, maxOutputTokens, response_mime_type: 'application/json' } }),
-      },
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents, generationConfig }) },
       attemptTimeout
     )
     const data = await response.json()
-    if (!response.ok) throw new Error(data.error?.message || `Gemini API error (${response.status})`)
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!response.ok) {
+      // A model that doesn't accept this thinking setting: same model, default thinking.
+      if (response.status === 400 && generationConfig.thinkingConfig && /thinking/i.test(data.error?.message || '')) {
+        return callGemini(contents, { ...opts, deadline, noThinkingConfig: true }, retryIndex)
+      }
+      throw new Error(data.error?.message || `Gemini API error (${response.status})`)
+    }
+    const text = (data.candidates?.[0]?.content?.parts || []).filter((p) => p.text && !p.thought).map((p) => p.text).join('')
     if (!text) throw new Error(`Gemini returned no content (${data.candidates?.[0]?.finishReason || 'unknown reason'})`)
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')
     return JSON.parse(text.substring(start, end + 1))
   } catch (error) {
-    if (retryIndex < lastIndex) return callGemini(contents, { timeoutMs, maxAttempts, maxOutputTokens, deadline }, retryIndex + 1)
+    if (retryIndex < lastIndex) return callGemini(contents, { ...opts, deadline, noThinkingConfig: false }, retryIndex + 1)
     throw error
   }
 }
@@ -84,7 +106,7 @@ async function extractVehicleInfoFromPlate(imageBase64) {
   "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
   "co2": number, "critAir": number, "consumptionMixed": number }`
   try {
-    return await callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 15000, maxAttempts: 2, budgetMs: 15000 })
+    return await callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 15000, maxAttempts: 2, budgetMs: 15000, thinkingBudget: 512 })
   } catch (error) {
     return { error: true, message: error.message }
   }
@@ -105,18 +127,25 @@ async function enrichVehicleSpecs({ brand, model, year, category }) {
   "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
   "co2": number, "critAir": number, "consumptionMixed": number }`
   try {
-    return await callGemini([{ parts: [{ text: prompt }] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 15000 })
+    return await callGemini([{ parts: [{ text: prompt }] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 15000, tier: 'lite', thinkingBudget: 0, maxOutputTokens: 1024 })
   } catch (error) {
     return {}
   }
+}
+
+/** Reads the license plate text only (cheap model, no reasoning). */
+async function readPlateText(imageBase64) {
+  const prompt = `Lis la plaque d'immatriculation visible sur la photo. Réponds UNIQUEMENT en JSON :
+  { "plate": "texte exact de la plaque, sans espaces, ou null si illisible", "confidence": nombre entre 0 et 1 }`
+  return callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 8000, maxAttempts: 1, budgetMs: 8000, tier: 'lite', thinkingBudget: 0, maxOutputTokens: 128 })
 }
 
 /** Quick capture validation (framing / quality) during the guided walkthrough. */
 async function validateCapture(imageBase64, pointName, vehicleType = 'véhicule') {
   const prompt = `Valide cette photo pour l'étape "${pointName}" d'un(e) ${vehicleType}.
   La photo doit être claire, bien cadrée et montrer la partie demandée.
-  Réponds UNIQUEMENT en JSON: { "valid": true/false, "reason": "string", "instruction": "string" }`
-  return callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 20000 })
+  Réponds UNIQUEMENT en JSON, phrases de 10 mots max : { "valid": true/false, "reason": "string", "instruction": "string" }`
+  return callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 20000, tier: 'lite', thinkingBudget: 0, maxOutputTokens: 512 })
 }
 
 /**
@@ -175,7 +204,9 @@ Réponds UNIQUEMENT en JSON :
   // Many images (up to ~80 in comparison mode) take a while: one long
   // attempt, plus a fallback model only with what's left of the function's
   // time limit (vercel.json maxDuration = 120s).
-  return callGemini([{ parts }], { timeoutMs: 95000, maxAttempts: 2, budgetMs: 105000, maxOutputTokens: 16384 })
+  // Damage detection keeps the best-value model and some reasoning (that's
+  // what makes it precise), but capped: reasoning tokens are billed as output.
+  return callGemini([{ parts }], { timeoutMs: 95000, maxAttempts: 2, budgetMs: 105000, maxOutputTokens: 16384, thinkingBudget: ANALYSIS_THINKING_BUDGET })
 }
 
-module.exports = { extractVehicleInfoFromPlate, enrichVehicleSpecs, validateCapture, analyzeInspection }
+module.exports = { extractVehicleInfoFromPlate, enrichVehicleSpecs, validateCapture, analyzeInspection, readPlateText }

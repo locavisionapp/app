@@ -60,6 +60,16 @@ export default function BillingSettings() {
   const tiers = settings.pricing.vehicleTiers
   const setTier = (i, key, value) => setPricing('vehicleTiers', tiers.map((t, j) => (j === i ? { ...t, [key]: value } : t)))
 
+  async function optimizeStorage() {
+    if (!window.confirm('Activer les classes de stockage économiques pour les photos anciennes (Nearline après 60 jours, Coldline après 1 an) ?')) return
+    try {
+      await api.optimizeStorage()
+      toast.success('Stockage optimisé : les photos anciennes passeront automatiquement en classes moins chères.')
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   async function resetGrid() {
     if (!window.confirm('Remplacer votre grille tarifaire et vos hypothèses de coûts par la grille recommandée ? Vos coordonnées ne changent pas.')) return
     setSaving(true)
@@ -205,6 +215,9 @@ export default function BillingSettings() {
       <Card className="space-y-3 p-4">
         <p className="text-sm font-semibold text-slate-700">Hypothèses de coûts (calcul de marge, interne)</p>
         <p className="text-xs text-slate-500">Ajustez-les avec vos factures réelles Google Cloud / Gemini / Vercel / Plate Recognizer / SIV.</p>
+        <button type="button" onClick={optimizeStorage} className="text-xs font-medium text-brand-700 hover:underline">
+          Optimiser le coût du stockage des photos (à faire une fois)
+        </button>
         <div className="grid gap-3 sm:grid-cols-2">
           {COST_FIELDS.map(([key, label]) => (
             <Field key={key} label={label}>
