@@ -122,7 +122,8 @@ async function buildQuotePdf({ quote, company, seller }) {
     terms.push(`Facture acquittée le ${day(quote.paidAt)} par virement${quote.paymentReference ? ` (réf. ${quote.paymentReference})` : ''}.`)
     terms.push(`Licence valable du ${day(quote.paidAt)} au ${day(quote.paidAt + 365 * 24 * 3600 * 1000)}.`)
   } else {
-    terms.push(`Licence annuelle, payable par virement à ${seller.paymentTermsDays || 30} jours à réception de la facture.${quote.input?.commitmentYears > 1 ? ` Engagement de ${quote.input.commitmentYears} ans, facturation annuelle.` : ''}`)
+    terms.push(`Licence annuelle, payable par virement à ${seller.paymentTermsDays || 30} jours à réception de la facture.${quote.input?.commitmentYears > 1 ? ` Engagement de ${quote.input.commitmentYears} ans, facturation annuelle, prix garantis pendant toute la durée de l'engagement.` : ''}`)
+    terms.push("Inspections IA illimitées dans la limite d'un usage raisonnable indiqué ci-dessus ; nombre de véhicules suivis dans la limite de la tolérance de flotte.")
     if (seller.iban) terms.push(`IBAN : ${seller.iban}${seller.bic ? ` — BIC : ${seller.bic}` : ''}`)
   }
   terms.push("En cas de retard de paiement : pénalités au taux de 3 fois le taux d'intérêt légal et indemnité forfaitaire pour frais de recouvrement de 40 € (art. L441-10 du Code de commerce). Pas d'escompte pour paiement anticipé.")

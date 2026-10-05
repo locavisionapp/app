@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
-import { Plus, Copy, Check, ChevronDown, ChevronUp, RefreshCw, Trash2, Ban, PlayCircle, FileText, CircleDollarSign, X } from 'lucide-react'
+import { Plus, Copy, Check, ChevronDown, ChevronUp, RefreshCw, Trash2, Ban, PlayCircle, FileText, CircleDollarSign, X, Search } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { Field, Input } from '../../components/ui/Field'
+import { Field, Input, Select } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useToast } from '../../components/ui/Toast'
 import { api, saveBlob } from '../../lib/api'
@@ -351,8 +352,20 @@ function CompanyRow({ company, onChange }) {
   )
 }
 
+const DEFAULT_FILTERS = { q: '', status: '', license: '', module: '', sort: 'recent' }
+const SORTS = [
+  ['recent', 'Plus récentes'],
+  ['name', 'Nom (A → Z)'],
+  ['revenue', 'Licence la plus élevée'],
+  ['vehicles', 'Plus de véhicules'],
+  ['usage', "Plus d'appels API"],
+  ['expiry', 'Fin de licence la plus proche'],
+]
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export default function Companies() {
   const toast = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [companies, setCompanies] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', contactEmail: '', slug: '', initialUsername: 'admin', trialDays: '' })
@@ -392,10 +405,57 @@ export default function Companies() {
     }
   }
 
+  // Filters live in the URL: shareable, and kept on reload / back navigation.
+  const filters = Object.fromEntries(Object.entries(DEFAULT_FILTERS).map(([k, v]) => [k, searchParams.get(k) ?? v]))
+  function setFilter(key, value) {
+    const next = new URLSearchParams(searchParams)
+    if (!value || value === DEFAULT_FILTERS[key]) next.delete(key)
+    else next.set(key, value)
+    setSearchParams(next, { replace: true })
+  }
+
+  const now = Date.now()
+  const isExpiringSoon = (c) => c.license?.endsAt && c.license.endsAt > now && c.license.endsAt - now < 30 * DAY_MS
+  const visible = useMemo(() => {
+    if (!companies) return []
+    const q = filters.q.trim().toLowerCase()
+    const list = companies.filter((c) => {
+      if (q && ![c.name, c.slug, c.contactEmail].some((f) => String(f || '').toLowerCase().includes(q))) return false
+      if (filters.status && c.status !== filters.status) return false
+      if (filters.license === 'with' && !c.license) return false
+      if (filters.license === 'without' && c.license) return false
+      if (filters.license === 'expiring' && !isExpiringSoon(c)) return false
+      if (filters.module && !(c.enabledModules || ALL_MODULES.map((m) => m.id)).includes(filters.module)) return false
+      return true
+    })
+    const sorters = {
+      recent: (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
+      name: (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fr'),
+      revenue: (a, b) => (b.license?.amount || 0) - (a.license?.amount || 0),
+      vehicles: (a, b) => (b.vehicleCount || 0) - (a.vehicleCount || 0),
+      usage: (a, b) => (b.apiCallCount || 0) - (a.apiCallCount || 0),
+      expiry: (a, b) => (a.license?.endsAt || Infinity) - (b.license?.endsAt || Infinity),
+    }
+    return [...list].sort(sorters[filters.sort] || sorters.recent)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies, searchParams])
+
+  const stats = useMemo(() => {
+    const list = companies || []
+    return {
+      total: list.length,
+      active: list.filter((c) => c.status === 'active').length,
+      trial: list.filter((c) => c.status === 'trial').length,
+      expiringSoon: list.filter(isExpiringSoon).length,
+      revenue: list.filter((c) => c.status === 'active' && c.license).reduce((sum, c) => sum + (c.license.amount || 0), 0),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companies])
+
   if (!companies) return <FullscreenSpinner />
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4">
+    <div className="mx-auto max-w-4xl space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900">Entreprises</h1>
         <Button size="sm" onClick={() => setShowForm(!showForm)}>
@@ -438,10 +498,65 @@ export default function Companies() {
         </Card>
       )}
 
-      <div className="space-y-2">
-        {companies.map((c) => (
-          <CompanyRow key={c.id} company={c} onChange={handleRowChange} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {[
+          ['Entreprises', stats.total],
+          ['Actives', stats.active],
+          ["En essai", stats.trial],
+          ['Expirent < 30 j', stats.expiringSoon],
+          ['Licences / an (HT)', `${Math.round(stats.revenue).toLocaleString('fr-FR')} €`],
+        ].map(([label, value]) => (
+          <Card key={label} className="p-3 text-center">
+            <p className="text-lg font-bold text-slate-900">{value}</p>
+            <p className="text-xs text-slate-500">{label}</p>
+          </Card>
         ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <Input type="search" className="pl-9" placeholder="Nom, identifiant, email…" value={filters.q} onChange={(e) => setFilter('q', e.target.value)} />
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Select className="h-10" value={filters.status} onChange={(e) => setFilter('status', e.target.value)} aria-label="Statut">
+            <option value="">Tous les statuts</option>
+            {Object.entries(STATUS_LABELS).map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </Select>
+          <Select className="h-10" value={filters.license} onChange={(e) => setFilter('license', e.target.value)} aria-label="Licence">
+            <option value="">Toutes les licences</option>
+            <option value="with">Avec licence payée</option>
+            <option value="without">Sans licence</option>
+            <option value="expiring">Expire dans 30 jours</option>
+          </Select>
+          <Select className="h-10" value={filters.module} onChange={(e) => setFilter('module', e.target.value)} aria-label="Module">
+            <option value="">Tous les modules</option>
+            {ALL_MODULES.map((m) => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
+          </Select>
+          <Select className="h-10" value={filters.sort} onChange={(e) => setFilter('sort', e.target.value)} aria-label="Trier par">
+            {SORTS.map(([id, label]) => (
+              <option key={id} value={id}>{label}</option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>{visible.length} entreprise(s){visible.length !== companies.length ? ` sur ${companies.length}` : ''}</span>
+          {Object.entries(filters).some(([k, v]) => v && v !== DEFAULT_FILTERS[k]) && (
+            <button onClick={() => setSearchParams({}, { replace: true })} className="hover:underline">Réinitialiser les filtres</button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {visible.length === 0 ? (
+          <Card className="p-8 text-center text-sm text-slate-500">Aucune entreprise ne correspond.</Card>
+        ) : (
+          visible.map((c) => <CompanyRow key={c.id} company={c} onChange={handleRowChange} />)
+        )}
       </div>
     </div>
   )

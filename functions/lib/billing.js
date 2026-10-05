@@ -1,4 +1,4 @@
-const { db } = require('./db')
+const { db, FieldValue } = require('./db')
 const { ApiError } = require('./asyncRoute')
 const { DEFAULT_PRICING, DEFAULT_COSTS } = require('./pricing')
 
@@ -46,8 +46,13 @@ const num = (v, min, max, label) => {
 }
 const str = (v, max = 200) => String(v ?? '').trim().slice(0, max)
 
-/** Validates and saves the admin's billing settings. */
+/** Validates and saves the admin's billing settings. `resetPricing` restores the recommended grid and cost assumptions. */
 async function saveBillingSettings(body = {}) {
+  if (body.resetPricing) {
+    await settingsRef().set({ pricing: FieldValue.delete(), costs: FieldValue.delete(), updatedAt: Date.now() }, { merge: true })
+    cache = null
+    return getBillingSettings({ fresh: true })
+  }
   const seller = {}
   for (const key of ['name', 'legalForm', 'address', 'siret', 'vatNumber', 'email', 'phone', 'iban', 'bic']) {
     if (body.seller?.[key] != null) seller[key] = str(body.seller[key], key === 'address' ? 400 : 120)
@@ -58,7 +63,7 @@ async function saveBillingSettings(body = {}) {
 
   const pricing = {}
   const p = body.pricing || {}
-  for (const [key, max] of [['platformFee', 100000], ['extraAgencyYearly', 100000], ['apiModuleYearly', 100000], ['includedAgencies', 1000], ['fairUseScansPerVehicleMonth', 1000], ['vehicleTolerancePct', 100]]) {
+  for (const [key, max] of [['platformFee', 100000], ['minimumAnnual', 100000], ['extraAgencyYearly', 100000], ['apiModuleYearly', 100000], ['includedAgencies', 1000], ['fairUseScansPerVehicleMonth', 1000], ['vehicleTolerancePct', 100], ['extraScanPrice', 100], ['usageCapBufferPct', 500]]) {
     if (p[key] != null) pricing[key] = num(p[key], 0, max, key)
   }
   if (p.vatRate != null) pricing.vatRate = num(p.vatRate, 0, 0.3, 'taux de TVA')

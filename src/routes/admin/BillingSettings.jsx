@@ -21,15 +21,19 @@ const SELLER_FIELDS = [
 
 const PRICE_FIELDS = [
   ['platformFee', 'Licence plateforme (€ HT / an / entreprise)'],
+  ['minimumAnnual', 'Minimum de facturation (€ HT / an)'],
   ['includedAgencies', 'Agences incluses'],
   ['extraAgencyYearly', 'Agence supplémentaire (€ HT / an)'],
   ['apiModuleYearly', 'Module API & webhooks (€ HT / an)'],
-  ['fairUseScansPerVehicleMonth', 'Plafond « usage raisonnable » : inspections / véhicule / mois'],
+  ['fairUseScansPerVehicleMonth', 'Inspections incluses / véhicule / mois'],
+  ['extraScanPrice', 'Inspection supplémentaire, pack intensif (€ HT)'],
+  ['usageCapBufferPct', 'Marge du plafond de licence au-delà de l’usage prévu (%)'],
   ['vehicleTolerancePct', 'Tolérance de flotte (%) — ex : 10 = 25 véhicules → 28 autorisés'],
 ]
 
 const COST_FIELDS = [
-  ['avgScansPerVehicleMonth', 'Usage moyen supposé : inspections / véhicule / mois'],
+  ['avgScansPerVehicleMonth', 'Usage par défaut si le client ne sait pas : inspections / véhicule / mois'],
+  ['photoRetentionYears', 'Durée de conservation des photos (années)'],
   ['aiPerInspection', 'Analyse IA par inspection (€)'],
   ['plateScanPerInspection', 'Lecture de plaque par inspection (€)'],
   ['sivLookupPerVehicle', 'Fiche SIV par nouveau véhicule (€)'],
@@ -55,6 +59,19 @@ export default function BillingSettings() {
   const setCost = (key, value) => setSettings({ ...settings, costs: { ...settings.costs, [key]: value } })
   const tiers = settings.pricing.vehicleTiers
   const setTier = (i, key, value) => setPricing('vehicleTiers', tiers.map((t, j) => (j === i ? { ...t, [key]: value } : t)))
+
+  async function resetGrid() {
+    if (!window.confirm('Remplacer votre grille tarifaire et vos hypothèses de coûts par la grille recommandée ? Vos coordonnées ne changent pas.')) return
+    setSaving(true)
+    try {
+      setSettings(await api.saveBillingSettings({ resetPricing: true }))
+      toast.success('Grille recommandée appliquée.')
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function save() {
     setSaving(true)
@@ -107,7 +124,12 @@ export default function BillingSettings() {
       </Card>
 
       <Card className="space-y-3 p-4">
-        <p className="text-sm font-semibold text-slate-700">Grille tarifaire (HT)</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-slate-700">Grille tarifaire (HT)</p>
+          <button type="button" onClick={resetGrid} disabled={saving} className="text-xs text-brand-700 hover:underline">
+            Appliquer la grille recommandée
+          </button>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {PRICE_FIELDS.map(([key, label]) => (
             <Field key={key} label={label}>
