@@ -10,7 +10,7 @@ const {
   downloadInspectionPhotos,
   inspectionPhotoPath,
   toPhotoUrls,
-  deletePrefix,
+  deleteVehiclePhotos,
   WEBHOOK_URL_TTL_MS,
 } = require('../lib/storage')
 const { getCategoryLabel } = require('../lib/categories')
@@ -80,9 +80,9 @@ async function getVehicleOr404(companyId, vehicleId) {
  * and turned into short-lived signed URLs here; inspections from before that
  * change stored public URLs in `photos`, passed through unchanged.
  */
-async function serializeInspection(id, data, urlTtlMs) {
+async function serializeInspection(req, id, data, ttlMs) {
   const { photoPaths, photos, ...rest } = data
-  const urls = await toPhotoUrls(photoPaths || photos || [], urlTtlMs)
+  const urls = await toPhotoUrls(photoPaths || photos || [], { ttlMs, baseUrl: `${req.protocol}://${req.get('host')}` })
   return { id, ...rest, photos: urls, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
 }
 
@@ -263,7 +263,7 @@ router.delete(
   asyncRoute(async (req, res) => {
     const { ref } = await getVehicleOr404(req.auth.companyId, req.params.id)
     await db.recursiveDelete(ref) // vehicle doc + its inspections subcollection
-    await deletePrefix(`companies/${req.auth.companyId}/vehicles/${req.params.id}/`)
+    await deleteVehiclePhotos(req.auth.companyId, req.params.id)
     dispatchWebhook(req.auth.companyId, 'vehicle.deleted', { id: req.params.id })
     res.status(204).end()
   })
@@ -337,7 +337,7 @@ router.get(
     const snap = await query.limit(limit + 1).get()
     const docs = snap.docs.slice(0, limit)
     if (snap.docs.length > limit) res.set('X-Next-Cursor', docs[docs.length - 1].id)
-    res.json(await Promise.all(docs.map((d) => serializeInspection(d.id, d.data()))))
+    res.json(await Promise.all(docs.map((d) => serializeInspection(req, d.id, d.data()))))
   })
 )
 
@@ -348,7 +348,7 @@ router.get(
   asyncRoute(async (req, res) => {
     const doc = await vehiclesCol(req.auth.companyId).doc(req.params.id).collection('inspections').doc(req.params.inspectionId).get()
     if (!doc.exists) throw new ApiError(404, 'Inspection introuvable.')
-    res.json(await serializeInspection(doc.id, doc.data()))
+    res.json(await serializeInspection(req, doc.id, doc.data()))
   })
 )
 
@@ -453,7 +453,7 @@ router.post(
 
     const inspectionRef = vehicleRef.collection('inspections').doc(inspectionId)
     const already = await inspectionRef.get()
-    if (already.exists) return res.json(await serializeInspection(already.id, already.data()))
+    if (already.exists) return res.json(await serializeInspection(req, already.id, already.data()))
 
     // Guard against two concurrent submissions of the same inspection (retry
     // fired while the first attempt is still analyzing): only one runs.
@@ -528,11 +528,11 @@ router.post(
       )
       await scanUsageRef.set({ count: FieldValue.increment(1) }, { merge: true })
 
-      serializeInspection(inspectionId, inspection, WEBHOOK_URL_TTL_MS)
+      serializeInspection(req, inspectionId, inspection, WEBHOOK_URL_TTL_MS)
         .then((payload) => dispatchWebhook(companyId, 'inspection.completed', { vehicleId: req.params.id, inspectionId, ...payload }))
         .catch((e) => console.warn('[inspections] webhook payload failed', e.message))
 
-      res.status(201).json(await serializeInspection(inspectionId, inspection))
+      res.status(201).json(await serializeInspection(req, inspectionId, inspection))
     } finally {
       await lockRef.delete().catch(() => {})
     }

@@ -7,11 +7,22 @@
 export const INSPECTION_PHOTO = { maxSide: 1600, quality: 0.8 }
 export const PLATE_PHOTO = { maxSide: 1280, quality: 0.85 }
 
-/** Draws `source` (video/image/canvas) downscaled to `maxSide` and returns a JPEG data URL. */
-export function captureJpeg(source, canvas, { maxSide, quality }) {
-  const srcW = source.videoWidth || source.naturalWidth || source.width
-  const srcH = source.videoHeight || source.naturalHeight || source.height
-  if (!srcW || !srcH) return null
+// The server stores each photo in a single record capped at 900KB; stay
+// safely under it. Very detailed scenes (gravel, foliage) can exceed it at
+// the default quality, so those get re-encoded smaller.
+const MAX_PHOTO_BYTES = 800 * 1024
+const FALLBACKS = [
+  { scale: 1, quality: 0.65 },
+  { scale: 0.8, quality: 0.6 },
+  { scale: 0.6, quality: 0.55 },
+]
+
+function dataUrlBytes(dataUrl) {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+  return Math.floor((base64.length * 3) / 4)
+}
+
+function encode(source, canvas, srcW, srcH, maxSide, quality) {
   const scale = Math.min(1, maxSide / Math.max(srcW, srcH))
   canvas.width = Math.round(srcW * scale)
   canvas.height = Math.round(srcH * scale)
@@ -19,4 +30,17 @@ export function captureJpeg(source, canvas, { maxSide, quality }) {
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height)
   return canvas.toDataURL('image/jpeg', quality)
+}
+
+/** Draws `source` (video/image/canvas) downscaled to `maxSide` and returns a JPEG data URL under MAX_PHOTO_BYTES. */
+export function captureJpeg(source, canvas, { maxSide, quality }) {
+  const srcW = source.videoWidth || source.naturalWidth || source.width
+  const srcH = source.videoHeight || source.naturalHeight || source.height
+  if (!srcW || !srcH) return null
+  let dataUrl = encode(source, canvas, srcW, srcH, maxSide, quality)
+  for (const f of FALLBACKS) {
+    if (dataUrlBytes(dataUrl) <= MAX_PHOTO_BYTES) break
+    dataUrl = encode(source, canvas, srcW, srcH, Math.round(maxSide * f.scale), f.quality)
+  }
+  return dataUrl
 }

@@ -5,7 +5,7 @@ const { requireRole, generateApiKey, hashApiKey } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
 const { API_COST_PER_CALL_EUR, MODULES } = require('../lib/config')
 const { slugify, synthesizeEmail } = require('../lib/slug')
-const { deletePrefix } = require('../lib/storage')
+const { deleteCompanyPhotos } = require('../lib/storage')
 const { SYNTHETIC_EMAIL_DOMAIN } = require('../lib/config')
 
 const router = express.Router()
@@ -150,7 +150,7 @@ router.delete(
     )
 
     await db.recursiveDelete(ref) // company doc + vehicles/agencies/apiUsage/quotes subcollections
-    await deletePrefix(`companies/${req.params.id}/`) // inspection photos (RGPD erasure)
+    await deleteCompanyPhotos(req.params.id) // inspection photos (RGPD erasure)
     res.status(204).end()
   })
 )

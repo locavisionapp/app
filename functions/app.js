@@ -6,6 +6,7 @@ const { authenticate } = require('./lib/auth')
 const { logUsage } = require('./lib/usage')
 const { asyncRoute } = require('./lib/asyncRoute')
 const { MODULES } = require('./lib/config')
+const { readSignedPhoto } = require('./lib/storage')
 
 const vehiclesRoutes = require('./routes/vehicles')
 const companiesRoutes = require('./routes/companies')
@@ -42,6 +43,21 @@ const limiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Trop de requêtes, réessayez dans une minute.' },
 })
+
+// Inspection photos (Firestore storage backend). <img> tags can't send an
+// Authorization header, so access is granted by the URL's own short-lived
+// HMAC signature instead (same model as Cloud Storage signed URLs).
+app.get(
+  '/v1/photos/:companyId/:photoId',
+  limiter,
+  asyncRoute(async (req, res) => {
+    const data = await readSignedPhoto(req.params.companyId, req.params.photoId, req.query.e, req.query.s)
+    if (!data) return res.status(403).json({ error: 'Lien de photo invalide ou expiré.' })
+    res.set('Content-Type', 'image/jpeg')
+    res.set('Cache-Control', 'private, max-age=3600')
+    res.send(Buffer.from(data))
+  })
+)
 
 const v1 = express.Router()
 v1.use(limiter, authenticate, logUsage)

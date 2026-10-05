@@ -125,9 +125,18 @@ firebase deploy --only firestore:indexes,storage --project locavision-13692
 Tant qu'ils ne sont pas construits, l'API retombe automatiquement sur un filtrage en
 mémoire (plus lent, mais sans erreur).
 
-**Photos d'inspection** : stockées en privé, servies via des URLs signées temporaires.
-La signature utilise la clé `FIREBASE_SERVICE_ACCOUNT_KEY` (Vercel). Sur Firebase Cloud
-Functions, le compte de service doit avoir le rôle *Service Account Token Creator*.
+**Photos d'inspection** : privées, servies via des URLs signées temporaires. Deux
+emplacements possibles, choisis par la variable `PHOTO_STORAGE` :
+
+| `PHOTO_STORAGE` | Où vont les photos | Prérequis |
+|---|---|---|
+| *(absente)* | Firestore, collection `companies/{id}/photos` (900 Ko max par photo, 1 Go au total en gratuit) | Aucun — marche en plan Spark |
+| `gcs` | Bucket Firebase Storage | Plan Blaze + Storage activé + `FIREBASE_STORAGE_BUCKET` |
+
+Les URLs signées utilisent la clé `FIREBASE_SERVICE_ACCOUNT_KEY` (ou `PHOTO_URL_SECRET` si
+définie). Sur Firebase Cloud Functions en mode `gcs`, le compte de service doit avoir le
+rôle *Service Account Token Creator*. Changer de mode ne déplace pas les photos déjà
+enregistrées.
 
 **Envoi des photos** : chaque photo est réduite à 1600 px / JPEG 80 % sur le téléphone
 (~150-400 Ko) et envoyée seule, dès la prise de vue — aucune requête ne s'approche de la
