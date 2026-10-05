@@ -32,3 +32,4 @@ test_key.js
 # Local notes containing credentials
 email.txt
 firestore-debug.log
+docs/identifiants.txt

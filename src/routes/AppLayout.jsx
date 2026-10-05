@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X } from 'lucide-react'
+import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { cn } from '../lib/cn'
 import { listQueued } from '../lib/inspectionQueue'
@@ -9,6 +9,7 @@ import { SyncBanner } from '../components/scan/SyncBanner'
 const ADMIN_NAV = [
   { to: '/admin/companies', label: 'Entreprises', icon: Building2 },
   { to: '/admin/usage', label: 'Appels API', icon: BarChart3 },
+  { to: '/admin/security', label: 'Sécurité', icon: ShieldCheck },
 ]
 
 function companyNav(enabledModules) {
@@ -19,6 +20,7 @@ function companyNav(enabledModules) {
     { to: '/app/agencies', label: 'Agences', icon: MapPin, hidden: !modules.includes('agencies') },
     { to: '/app/employees', label: 'Employés', icon: Users },
     { to: '/app/account', label: 'Mon compte', icon: UserCog },
+    { to: '/app/security', label: 'Sécurité', icon: ShieldCheck },
     { to: '/app/docs', label: 'Documentation', icon: BookOpen },
   ].filter((item) => !item.hidden)
 }

@@ -19,6 +19,7 @@ const Account = lazy(() => import('./routes/company/Account'))
 const Docs = lazy(() => import('./routes/company/Docs'))
 const Companies = lazy(() => import('./routes/admin/Companies'))
 const ApiUsage = lazy(() => import('./routes/admin/ApiUsage'))
+const Security = lazy(() => import('./routes/Security'))
 
 // Remount the scan flow on every navigation to /app/scan, so "Nouveau scan"
 // from the result screen (same URL) starts over instead of doing nothing.
@@ -52,6 +53,7 @@ export default function App() {
                 <Route path="/app/employees" element={<Employees />} />
                 <Route path="/app/account" element={<Account />} />
                 <Route path="/app/docs" element={<Docs />} />
+                <Route path="/app/security" element={<Security />} />
               </Route>
 
               <Route
@@ -64,6 +66,7 @@ export default function App() {
                 <Route path="/admin" element={<Navigate to="/admin/companies" replace />} />
                 <Route path="/admin/companies" element={<Companies />} />
                 <Route path="/admin/usage" element={<ApiUsage />} />
+                <Route path="/admin/security" element={<Security />} />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

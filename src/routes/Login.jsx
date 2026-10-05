@@ -8,6 +8,8 @@ import { Field, Input } from '../components/ui/Field'
 import { Spinner } from '../components/ui/Spinner'
 import { BackButton } from '../components/ui/BackButton'
 import { synthesizeEmail } from '../lib/companyAuth'
+import { sendPasswordResetEmail } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 
 export default function Login() {
   const { user, profile, login, error } = useAuth()
@@ -18,6 +20,23 @@ export default function Login() {
   const [adminEmail, setAdminEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [resetMessage, setResetMessage] = useState(null)
+
+  // Platform admins log in with a real email, so Firebase can mail them a
+  // reset link. Company logins are synthetic (no mailbox): their own
+  // company admin resets them from the Employees page.
+  async function handleForgotPassword() {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+      setResetMessage("Saisissez d'abord votre email ci-dessus.")
+      return
+    }
+    try {
+      await sendPasswordResetEmail(auth, adminEmail)
+    } catch {
+      // Same message either way: don't reveal whether the account exists.
+    }
+    setResetMessage("Si un compte existe pour cet email, un lien de réinitialisation vient d'être envoyé.")
+  }
 
   if (user && profile) {
     const to = profile.role === 'platform_admin' ? '/admin/companies' : '/app/scan'
@@ -61,13 +80,25 @@ export default function Login() {
               <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </Field>
             {error && <p className="text-sm text-status-bad">{error}</p>}
+            {mode === 'admin' && (
+              <button type="button" onClick={handleForgotPassword} className="text-xs text-slate-500 hover:text-brand-700">
+                Mot de passe oublié ?
+              </button>
+            )}
+            {resetMessage && <p className="text-xs text-slate-600">{resetMessage}</p>}
+            {mode === 'company' && (
+              <p className="text-xs text-slate-400">Mot de passe oublié ? Demandez à un administrateur de votre entreprise de le réinitialiser.</p>
+            )}
             <Button type="submit" size="lg" className="w-full" disabled={submitting}>
               {submitting ? <Spinner size={18} className="text-white" /> : 'Se connecter'}
             </Button>
           </form>
 
           <button
-            onClick={() => setMode(mode === 'company' ? 'admin' : 'company')}
+            onClick={() => {
+              setMode(mode === 'company' ? 'admin' : 'company')
+              setResetMessage(null)
+            }}
             className="mt-4 flex w-full items-center justify-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
           >
             <ShieldCheck size={13} />
