@@ -110,9 +110,14 @@ export const api = {
   // `validate` runs the AI framing check on the same upload.
   uploadInspectionPhoto: (vehicleId, inspectionId, payload) =>
     apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/photos`, { method: 'POST', body: payload, timeoutMs: 45000 }),
+  // Human validation of the new defects: acceptedIds = confirmed real ones.
+  reviewInspection: (vehicleId, inspectionId, acceptedIds) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/review`, { method: 'POST', body: { acceptedIds } }),
+  updateDamageStatus: (vehicleId, damageId, status) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/damages/${damageId}`, { method: 'PUT', body: { status } }),
   // Runs the AI analysis on already-uploaded photos. Idempotent on inspectionId.
   submitInspection: (vehicleId, payload) =>
-    apiFetch(`/v1/vehicles/${vehicleId}/inspections`, { method: 'POST', body: payload, timeoutMs: 75000 }),
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections`, { method: 'POST', body: payload, timeoutMs: 130000 }),
 
   // Company agencies (branches/locations)
   listAgencies: () => apiFetch('/v1/agencies'),

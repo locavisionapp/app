@@ -4,7 +4,7 @@ const { db, FieldValue } = require('../lib/db')
 const { requireRole, requireModule } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
 const { identifyVehicleFromPlateImage, identifyVehicleFromPlateText, normalizePlate, enrichSparseSpecs } = require('../lib/plate')
-const { validateCapture, analyzeBatchInspection } = require('../lib/ai')
+const { validateCapture, analyzeInspection } = require('../lib/ai')
 const {
   uploadInspectionPhoto,
   downloadInspectionPhotos,
@@ -22,13 +22,13 @@ const adminOnly = requireRole('company_admin')
 const fleetModule = requireModule('fleet')
 const scanModule = requireModule('scan')
 
-const MAX_PHOTOS_PER_INSPECTION = 30
+const MAX_PHOTOS_PER_INSPECTION = 60 // quick walk-around: ~25-45 frames + close-ups
 const PLATE_MAX_LENGTH = 20
 const ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/
 const STEP_ID_PATTERN = /^[A-Za-z0-9_-]{1,60}$/
 // A crashed/timed-out analysis leaves its lock behind; past this age a retry
 // may take it over.
-const INSPECTION_LOCK_TTL_MS = 90 * 1000
+const INSPECTION_LOCK_TTL_MS = 150 * 1000
 
 // Optional spec sheet fields, populated from plate scan / SIV lookup / AI
 // fallback when available. Whitelisted here so a client can never inject
@@ -93,6 +93,77 @@ async function serializeInspection(req, id, data, ttlMs) {
   return { id, ...rest, photos: urls, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
 }
 
+// The AI request carries every photo inline; keep it well under Gemini's
+// ~20MB request limit (base64 adds a third).
+const AI_IMAGE_BUDGET_BYTES = 13 * 1024 * 1024
+const DAMAGE_STATUSES = ['open', 'repaired', 'dismissed']
+
+function damageId() {
+  return `dmg_${randomUUID().replace(/-/g, '').slice(0, 12)}`
+}
+
+/** Evenly keeps as many items as fit in `budget` bytes (sizes from `sizeOf`). */
+function fitToBudget(items, sizeOf, budget) {
+  const total = items.reduce((sum, it) => sum + sizeOf(it), 0)
+  if (total <= budget) return items
+  const keep = Math.max(1, Math.floor((items.length * budget) / total))
+  const step = items.length / keep
+  return Array.from({ length: keep }, (_, i) => items[Math.floor(i * step)])
+}
+
+/**
+ * Sanitizes the model's damage list: stable ids, photo index/box clamped to
+ * real values, and known/dismissed references only to ids that exist.
+ */
+function normalizeDamages(raw, photoCount, knownIds) {
+  if (!Array.isArray(raw)) return []
+  return raw.slice(0, 100).map((d) => {
+    const photoIndex = Number.isInteger(Number(d?.photo_index)) ? Math.min(Math.max(Number(d.photo_index), 0), photoCount - 1) : null
+    const box = Array.isArray(d?.box_2d) && d.box_2d.length === 4 && d.box_2d.every((n) => Number.isFinite(Number(n)))
+      ? d.box_2d.map((n) => Math.min(Math.max(Math.round(Number(n)), 0), 1000))
+      : null
+    const knownId = d?.known_id && knownIds.has(String(d.known_id)) ? String(d.known_id) : null
+    const change = !knownId ? 'new' : d?.change === 'worse' ? 'worse' : 'same'
+    return {
+      id: damageId(),
+      location: String(d?.location || 'Zone non précisée').slice(0, 120),
+      type: String(d?.type || 'autre').slice(0, 30),
+      severity: Math.min(Math.max(Math.round(Number(d?.severity) || 1), 1), 5),
+      description: String(d?.description || '').slice(0, 400),
+      photoIndex,
+      box,
+      knownId,
+      change,
+    }
+  })
+}
+
+/** knownDamages with lastSeenAt refreshed for defects re-seen unchanged. */
+function matchedKnownUpdate(known, damages, at) {
+  const seen = new Set(damages.filter((d) => d.knownId).map((d) => d.knownId))
+  if (!seen.size) return {}
+  return { knownDamages: known.map((k) => (seen.has(k.id) ? { ...k, lastSeenAt: at } : k)) }
+}
+
+/** Inspection status from what changed: comparison mode only counts new/worse defects. */
+function statusFromDamages(damages, comparison, aiStatus) {
+  const relevant = comparison ? damages.filter((d) => d.change !== 'same') : damages
+  if (relevant.length === 0) return comparison ? 'green' : ['green', 'orange', 'red'].includes(aiStatus) ? aiStatus : 'green'
+  return relevant.some((d) => d.severity >= 3) ? 'red' : 'orange'
+}
+
+/** Vehicle as returned by GET /vehicles/:id: known defects get a signed URL to their photo. */
+async function serializeVehicle(req, doc) {
+  const data = doc.data()
+  const known = data.knownDamages || []
+  const urls = await toPhotoUrls(known.map((d) => d.photoPath || ''), { baseUrl: `${req.protocol}://${req.get('host')}` })
+  return {
+    id: doc.id,
+    ...data,
+    knownDamages: known.map(({ photoPath, ...d }, i) => ({ ...d, photoUrl: photoPath ? urls[i] : null })),
+  }
+}
+
 router.post(
   '/scan-plate',
   companyRole,
@@ -100,7 +171,12 @@ router.post(
   asyncRoute(async (req, res) => {
     const { image } = req.body
     if (!image || typeof image !== 'string') throw new ApiError(400, 'Image manquante.')
-    const result = await identifyVehicleFromPlateImage(image)
+    const result = await identifyVehicleFromPlateImage(image, {
+      findExisting: async (plate) => {
+        const doc = await findVehicleByPlate(req.auth.companyId, plate)
+        return doc ? { ...doc.data(), id: undefined, existingVehicleId: doc.id, licensePlate: doc.data().licensePlate } : null
+      },
+    })
     // 200 even on failure: lets the client fall back to manual entry instead
     // of treating a "couldn't read the plate" outcome as a hard error.
     res.json(result)
@@ -277,7 +353,7 @@ router.get(
   fleetModule,
   asyncRoute(async (req, res) => {
     const { doc } = await getVehicleOr404(req.auth.companyId, req.params.id)
-    res.json({ id: doc.id, ...doc.data() })
+    res.json(await serializeVehicle(req, doc))
   })
 )
 
@@ -527,20 +603,65 @@ router.post(
         images = downloaded
       }
 
-      const analysis = await analyzeBatchInspection(images, getCategoryLabel(vehicleDoc.data().category))
+      // Comparison mode: previous validated inspection's photos + the
+      // vehicle's known (validated or dismissed) defects. First inspection
+      // of a vehicle = baseline.
+      const vehicleData = vehicleDoc.data()
+      const knownAll = vehicleData.knownDamages || []
+      const knownOpen = knownAll.filter((d) => d.status === 'open')
+      const dismissed = knownAll.filter((d) => d.status === 'dismissed')
+      let reference = []
+      let referenceInspectionId = null
+      if (vehicleData.lastValidatedInspectionId && vehicleData.lastValidatedInspectionId !== inspectionId) {
+        const refDoc = await vehicleRef.collection('inspections').doc(vehicleData.lastValidatedInspectionId).get()
+        const refPaths = refDoc.exists ? refDoc.data().photoPaths || [] : []
+        if (refPaths.length) {
+          referenceInspectionId = refDoc.id
+          reference = (await downloadInspectionPhotos(refPaths)).filter((p) => !p.missing)
+        }
+      }
+      const comparison = reference.length > 0 || knownOpen.length > 0
+      const currentBytes = images.reduce((sum, img) => sum + img.image.length * 0.75, 0)
+      reference = fitToBudget(reference, (img) => img.image.length * 0.75, Math.max(AI_IMAGE_BUDGET_BYTES - currentBytes, 2 * 1024 * 1024))
+
+      const analysis = await analyzeInspection({
+        current: images,
+        reference,
+        knownDamages: knownOpen,
+        dismissedDamages: dismissed,
+        vehicleType: getCategoryLabel(vehicleData.category),
+      })
+      const knownIds = new Set([...knownOpen, ...dismissed].map((d) => d.id))
+      const damages = normalizeDamages(analysis.damages, images.length, knownIds)
+      const openIds = new Set(knownOpen.map((d) => d.id))
+      const missingKnownIds = Array.isArray(analysis.missing_known_ids)
+        ? analysis.missing_known_ids.map(String).filter((id) => openIds.has(id) && !damages.some((d) => d.knownId === id))
+        : []
+      const status = statusFromDamages(damages, comparison, analysis.status)
 
       const inspection = {
         createdAt: Date.now(),
         inspectorUid: req.auth.uid,
-        status: ['green', 'orange', 'red'].includes(analysis.status) ? analysis.status : 'orange',
+        mode: comparison ? 'comparison' : 'baseline',
+        referenceInspectionId,
+        status,
         statusLabel: analysis.status_label || null,
         summary: analysis.summary || null,
         healthScore: Number.isFinite(Number(analysis.health_score)) ? Number(analysis.health_score) : null,
-        damages: Array.isArray(analysis.damages) ? analysis.damages : [],
+        damages,
+        newDamageCount: damages.filter((d) => d.change !== 'same').length,
+        missingKnownIds,
+        review: { status: damages.some((d) => d.change !== 'same') ? 'pending' : 'validated' },
         photoPaths,
         photoSteps: stepIds,
         mileage,
         source: req.auth.via === 'apikey' ? 'api' : 'web',
+      }
+
+      // Nothing new to decide on: the inspection becomes the comparison
+      // reference right away.
+      if (inspection.review.status === 'validated') {
+        inspection.review = { status: 'validated', acceptedIds: [], rejectedIds: [], validatedAt: inspection.createdAt, validatedBy: 'auto' }
       }
 
       await inspectionRef.set(inspection)
@@ -549,6 +670,9 @@ router.post(
           lastStatus: inspection.status,
           lastInspectionId: inspectionId,
           lastInspectionAt: inspection.createdAt,
+          pendingReviewCount: FieldValue.increment(inspection.review.status === 'pending' ? 1 : 0),
+          ...(inspection.review.status === 'validated' ? { lastValidatedInspectionId: inspectionId, lastValidatedInspectionAt: inspection.createdAt } : {}),
+          ...(inspection.review.status === 'validated' ? matchedKnownUpdate(vehicleData.knownDamages || [], damages, inspection.createdAt) : {}),
           ...(mileage != null ? { mileage, mileageUpdatedAt: inspection.createdAt } : {}),
         },
         { merge: true }
@@ -563,6 +687,120 @@ router.post(
     } finally {
       await lockRef.delete().catch(() => {})
     }
+  })
+)
+
+/**
+ * Human validation of an inspection's new/worse defects. `acceptedIds` are
+ * the defect ids confirmed as real (all others are recorded as dismissed
+ * false positives, so the AI won't report them as new again). Confirmed
+ * defects join the vehicle's known defects, and the inspection becomes the
+ * reference the next inspection is compared against.
+ */
+router.post(
+  '/vehicles/:id/inspections/:inspectionId/review',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    if (!Array.isArray(req.body?.acceptedIds)) throw new ApiError(400, 'acceptedIds doit être une liste.')
+    const accepted = new Set(req.body.acceptedIds.map(String))
+    const vehicleRef = vehiclesCol(req.auth.companyId).doc(req.params.id)
+    const inspectionRef = vehicleRef.collection('inspections').doc(req.params.inspectionId)
+
+    const result = await db.runTransaction(async (t) => {
+      const [vehicleSnap, inspectionSnap] = await Promise.all([t.get(vehicleRef), t.get(inspectionRef)])
+      if (!vehicleSnap.exists) throw new ApiError(404, 'Véhicule introuvable.')
+      if (!inspectionSnap.exists) throw new ApiError(404, 'Inspection introuvable.')
+      const inspection = inspectionSnap.data()
+      if (inspection.review?.status !== 'pending') throw new ApiError(409, 'Cette inspection a déjà été validée.')
+
+      const vehicle = vehicleSnap.data()
+      const now = Date.now()
+      const known = [...(vehicle.knownDamages || [])]
+      const byId = new Map(known.map((k, i) => [k.id, i]))
+      const acceptedIds = []
+      const rejectedIds = []
+
+      for (const d of inspection.damages || []) {
+        const photoPath = d.photoIndex != null ? (inspection.photoPaths || [])[d.photoIndex] || null : null
+        if (d.change === 'same') {
+          if (byId.has(d.knownId)) known[byId.get(d.knownId)] = { ...known[byId.get(d.knownId)], lastSeenAt: inspection.createdAt }
+          continue
+        }
+        const isAccepted = accepted.has(d.id)
+        ;(isAccepted ? acceptedIds : rejectedIds).push(d.id)
+        if (d.change === 'worse' && byId.has(d.knownId)) {
+          if (isAccepted) {
+            const k = known[byId.get(d.knownId)]
+            known[byId.get(d.knownId)] = {
+              ...k,
+              type: d.type,
+              severity: Math.max(d.severity, k.severity || 1),
+              description: d.description,
+              photoPath: photoPath || k.photoPath,
+              box: d.box || k.box,
+              lastSeenAt: inspection.createdAt,
+              worsenedAt: inspection.createdAt,
+              history: [...(k.history || []), { inspectionId: inspectionSnap.id, at: inspection.createdAt, change: 'worse', description: d.description }].slice(-20),
+            }
+          }
+          continue
+        }
+        known.push({
+          id: d.id,
+          status: isAccepted ? 'open' : 'dismissed',
+          location: d.location,
+          type: d.type,
+          severity: d.severity,
+          description: d.description,
+          photoPath,
+          box: d.box,
+          inspectionId: inspectionSnap.id,
+          firstSeenAt: inspection.createdAt,
+          lastSeenAt: inspection.createdAt,
+          ...(isAccepted ? {} : { dismissedAt: now }),
+        })
+      }
+
+      const review = { status: 'validated', acceptedIds, rejectedIds, validatedAt: now, validatedBy: req.auth.uid || 'api' }
+      t.update(inspectionRef, { review })
+      const isLatest = !vehicle.lastValidatedInspectionAt || inspection.createdAt >= vehicle.lastValidatedInspectionAt
+      t.set(
+        vehicleRef,
+        {
+          knownDamages: known,
+          pendingReviewCount: Math.max((vehicle.pendingReviewCount || 1) - 1, 0),
+          ...(isLatest ? { lastValidatedInspectionId: inspectionSnap.id, lastValidatedInspectionAt: inspection.createdAt } : {}),
+        },
+        { merge: true }
+      )
+      return { ...inspection, review }
+    })
+
+    dispatchWebhook(req.auth.companyId, 'inspection.reviewed', { vehicleId: req.params.id, inspectionId: req.params.inspectionId, review: result.review })
+    res.json(await serializeInspection(req, req.params.inspectionId, result))
+  })
+)
+
+/** Marks a known defect as repaired (or re-opens it). Repaired defects are no longer expected on the next inspection. */
+router.put(
+  '/vehicles/:id/damages/:damageId',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    const status = String(req.body?.status || '')
+    if (!DAMAGE_STATUSES.includes(status)) throw new ApiError(400, 'Statut invalide.')
+    const vehicleRef = vehiclesCol(req.auth.companyId).doc(req.params.id)
+    await db.runTransaction(async (t) => {
+      const snap = await t.get(vehicleRef)
+      if (!snap.exists) throw new ApiError(404, 'Véhicule introuvable.')
+      const known = snap.data().knownDamages || []
+      const i = known.findIndex((d) => d.id === req.params.damageId)
+      if (i === -1) throw new ApiError(404, 'Défaut introuvable.')
+      known[i] = { ...known[i], status, ...(status === 'repaired' ? { repairedAt: Date.now() } : {}) }
+      t.update(vehicleRef, { knownDamages: known })
+    })
+    res.json(await serializeVehicle(req, await vehicleRef.get()))
   })
 )
 

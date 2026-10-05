@@ -108,7 +108,7 @@ payant requis) ; Firestore/Storage/Auth restent sur **Firebase**. `vercel.json` 
 | `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` | Clés tierces (jamais préfixées `VITE_`, jamais exposées au client) |
 
 **Région & limites** (`vercel.json`) : la fonction API tourne à **Paris (`cdg1`)**, avec
-60 s max par requête (l'analyse IA de 16 photos peut prendre ~30 s). Pour que la promesse
+120 s max par requête (l'analyse IA en mode comparaison envoie jusqu'à ~80 photos). Pour que la promesse
 « données en UE » soit vraie de bout en bout, vérifiez que la base Firestore et le bucket
 Storage sont aussi en Europe (Console Firebase → Firestore → onglet *Données*, l'emplacement
 est affiché en haut ; `eur3` ou `europe-west*` = OK). L'emplacement d'une base Firestore ne

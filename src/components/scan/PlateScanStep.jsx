@@ -28,6 +28,8 @@ export function PlateScanStep({ onIdentified }) {
     setError(null)
     try {
       const data = await api.scanPlate(image)
+      // Already in the fleet: no confirmation needed, the parent opens its record.
+      if (data.existingVehicleId) return onIdentified(data)
       setResult(data)
     } catch (e) {
       setError(e.message || "Échec de l'identification de la plaque.")

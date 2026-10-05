@@ -4,7 +4,7 @@ import { ScanLine, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { Field, Input } from '../components/ui/Field'
+import { Field, Input, PasswordInput } from '../components/ui/Field'
 import { Spinner } from '../components/ui/Spinner'
 import { BackButton } from '../components/ui/BackButton'
 import { synthesizeEmail } from '../lib/companyAuth'
@@ -77,7 +77,7 @@ export default function Login() {
               </Field>
             )}
             <Field label="Mot de passe">
-              <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+              <PasswordInput required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </Field>
             {error && <p className="text-sm text-status-bad">{error}</p>}
             {mode === 'admin' && (

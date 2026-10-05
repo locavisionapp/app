@@ -29,7 +29,10 @@ router.post(
   asyncRoute(async (req, res) => {
     const username = String(req.body?.username || '').trim().toLowerCase()
     const password = String(req.body?.password || '')
-    const role = req.body?.role === 'company_admin' ? 'company_admin' : 'employee'
+    // One administrator per company (the account opened by LocaVision): every
+    // access created by the company itself is an employee.
+    if (req.body?.role === 'company_admin') throw new ApiError(400, 'Un seul compte administrateur par entreprise : les nouveaux accès sont des comptes employés.')
+    const role = 'employee'
     if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new ApiError(400, "Nom d'utilisateur invalide (3-30 caractères, lettres/chiffres/._-).")
     if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit faire au moins 8 caractères.')
 
@@ -61,13 +64,10 @@ router.put(
     const ref = usersCol().doc(req.params.uid)
     const doc = await ref.get()
     if (!doc.exists || doc.data().companyId !== req.auth.companyId) throw new ApiError(404, 'Employé introuvable.')
-    if (req.params.uid === req.auth.uid && req.body?.active === false) throw new ApiError(400, 'Vous ne pouvez pas désactiver votre propre compte.')
-    if (req.params.uid === req.auth.uid && req.body?.role === 'employee') {
-      throw new ApiError(400, 'Vous ne pouvez pas retirer vos propres droits administrateur.')
-    }
+    if (doc.data().role === 'company_admin') throw new ApiError(403, "Le compte administrateur de l'entreprise ne peut être ni modifié ni désactivé.")
+    if (req.body?.role === 'company_admin') throw new ApiError(400, 'Un seul compte administrateur par entreprise.')
 
     const updates = {}
-    if (req.body?.role === 'company_admin' || req.body?.role === 'employee') updates.role = req.body.role
     if (typeof req.body?.active === 'boolean') updates.active = req.body.active
     await ref.set(updates, { merge: true })
     res.json({ uid: doc.id, ...doc.data(), ...updates })
@@ -80,6 +80,7 @@ router.post(
   asyncRoute(async (req, res) => {
     const doc = await usersCol().doc(req.params.uid).get()
     if (!doc.exists || doc.data().companyId !== req.auth.companyId) throw new ApiError(404, 'Employé introuvable.')
+    if (doc.data().role === 'company_admin') throw new ApiError(403, "Changez le mot de passe administrateur depuis l'onglet Sécurité.")
 
     const newPassword = crypto.randomBytes(9).toString('base64url')
     await auth.updateUser(req.params.uid, { password: newPassword })
@@ -94,6 +95,7 @@ router.delete(
     if (req.params.uid === req.auth.uid) throw new ApiError(400, 'Vous ne pouvez pas supprimer votre propre compte.')
     const doc = await usersCol().doc(req.params.uid).get()
     if (!doc.exists || doc.data().companyId !== req.auth.companyId) throw new ApiError(404, 'Employé introuvable.')
+    if (doc.data().role === 'company_admin') throw new ApiError(403, "Le compte administrateur de l'entreprise ne peut pas être supprimé.")
 
     await auth.deleteUser(req.params.uid).catch((e) => console.warn('[employees] auth.deleteUser failed', e.message))
     await doc.ref.delete()

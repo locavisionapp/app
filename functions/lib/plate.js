@@ -183,8 +183,12 @@ async function identifyVehicleFromPlateText(plateText) {
   return { error: true, message: 'Véhicule introuvable dans le registre.', licensePlate: plate }
 }
 
-/** Full pipeline: photo -> plate text -> vehicle spec sheet. */
-async function identifyVehicleFromPlateImage(imageBase64) {
+/**
+ * Full pipeline: photo -> plate text -> vehicle spec sheet. `findExisting`
+ * (plate -> fleet record or null) short-circuits the registry lookup when
+ * the vehicle is already in the fleet.
+ */
+async function identifyVehicleFromPlateImage(imageBase64, { findExisting } = {}) {
   let plate = null
   try {
     plate = await ocrPlateFromImage(imageBase64)
@@ -192,6 +196,11 @@ async function identifyVehicleFromPlateImage(imageBase64) {
     console.warn('[Pipeline] PlateRecognizer skipped:', e.message)
   }
   if (plate) plate = normalizePlate(plate)
+
+  if (plate && findExisting) {
+    const existing = await findExisting(plate)
+    if (existing) return existing
+  }
 
   if (plate) {
     try {
@@ -206,6 +215,11 @@ async function identifyVehicleFromPlateImage(imageBase64) {
   try {
     const fallback = await extractVehicleInfoFromPlate(imageBase64)
     if (fallback && !fallback.error) {
+      const fallbackPlate = normalizePlate(plate || fallback.licensePlate)
+      if (fallbackPlate && findExisting) {
+        const existing = await findExisting(fallbackPlate)
+        if (existing) return existing
+      }
       const enriched = await enrichSparseSpecs(fallback)
       return { ...enriched, licensePlate: normalizePlate(plate || enriched.licensePlate) }
     }

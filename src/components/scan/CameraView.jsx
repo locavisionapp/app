@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import { Camera, AlertTriangle, RotateCcw } from 'lucide-react'
-import { captureJpeg, INSPECTION_PHOTO } from '../../lib/image'
+import { captureJpeg, probeFrame, INSPECTION_PHOTO } from '../../lib/image'
 
 function cameraErrorMessage(e) {
   if (!window.isSecureContext) return 'La caméra nécessite une connexion sécurisée (https).'
@@ -25,6 +25,7 @@ function cameraErrorMessage(e) {
 export const CameraView = forwardRef(function CameraView({ facingMode = 'environment', overlay, className }, ref) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const probeCanvasRef = useRef(null)
   const [error, setError] = useState(null)
   const [ready, setReady] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -72,6 +73,13 @@ export const CameraView = forwardRef(function CameraView({ facingMode = 'environ
         const canvas = canvasRef.current
         if (!video || !canvas || !ready) return null
         return captureJpeg(video, canvas, options)
+      },
+      /** Sharpness + motion probe of the current frame (walk-around mode). */
+      probe() {
+        const video = videoRef.current
+        if (!video || !ready) return null
+        if (!probeCanvasRef.current) probeCanvasRef.current = document.createElement('canvas')
+        return probeFrame(video, probeCanvasRef.current)
       },
     }),
     [ready]

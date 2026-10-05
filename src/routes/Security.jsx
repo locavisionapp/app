@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
-import { KeyRound, Eye, EyeOff } from 'lucide-react'
+import { KeyRound } from 'lucide-react'
 import { auth } from '../lib/firebase'
 import { useAuth } from '../lib/AuthContext'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { Field, Input } from '../components/ui/Field'
+import { Field, PasswordInput } from '../components/ui/Field'
 import { Spinner } from '../components/ui/Spinner'
 import { useToast } from '../components/ui/Toast'
 
@@ -33,7 +33,6 @@ export default function Security() {
   const { profile } = useAuth()
   const toast = useToast()
   const [form, setForm] = useState({ current: '', next: '', confirm: '' })
-  const [show, setShow] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -60,7 +59,6 @@ export default function Security() {
     }
   }
 
-  const type = show ? 'text' : 'password'
   const isCompanyUser = profile?.role !== 'platform_admin'
 
   return (
@@ -73,17 +71,14 @@ export default function Security() {
         {/* Lets password managers associate the new password with the right account. */}
         <input type="text" name="username" autoComplete="username" value={auth.currentUser?.email || ''} readOnly hidden />
         <Field label="Mot de passe actuel">
-          <Input type={type} required autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} />
+          <PasswordInput required autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} />
         </Field>
         <Field label={`Nouveau mot de passe (${MIN_LENGTH} caractères min.)`} hint={tooShort ? 'Trop court.' : sameAsOld ? "Identique à l'actuel." : null}>
-          <Input type={type} required minLength={MIN_LENGTH} autoComplete="new-password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} />
+          <PasswordInput required minLength={MIN_LENGTH} autoComplete="new-password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} />
         </Field>
         <Field label="Confirmer le nouveau mot de passe" hint={mismatch ? 'Les deux mots de passe ne correspondent pas.' : null}>
-          <Input type={type} required autoComplete="new-password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} />
+          <PasswordInput required autoComplete="new-password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} />
         </Field>
-        <button type="button" onClick={() => setShow(!show)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-brand-700">
-          {show ? <EyeOff size={14} /> : <Eye size={14} />} {show ? 'Masquer' : 'Afficher'} les mots de passe
-        </button>
         {error && <div className="rounded-xl bg-status-badBg px-4 py-3 text-sm text-status-bad">{error}</div>}
         <Button type="submit" className="w-full" disabled={!canSubmit || saving}>
           {saving ? <Spinner size={16} className="text-white" /> : 'Enregistrer le nouveau mot de passe'}

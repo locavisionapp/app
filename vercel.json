@@ -1,7 +1,7 @@
 {
   "regions": ["cdg1"],
   "functions": {
-    "api/handler.js": { "maxDuration": 60 }
+    "api/handler.js": { "maxDuration": 120 }
   },
   "headers": [
     {

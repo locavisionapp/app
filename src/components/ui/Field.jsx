@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '../../lib/cn'
 
 export function Field({ label, children, hint, className }) {
@@ -19,4 +21,23 @@ export function Input({ className, ...props }) {
 
 export function Select({ className, ...props }) {
   return <select {...props} className={cn(controlClass, className)} />
+}
+
+/** Password field with a show/hide toggle (eye icon). */
+export function PasswordInput({ className, ...props }) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="relative">
+      <input {...props} type={visible ? 'text' : 'password'} className={cn(controlClass, 'pr-11', className)} />
+      <button
+        type="button"
+        onClick={() => setVisible(!visible)}
+        className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 hover:text-slate-700"
+        aria-label={visible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+        tabIndex={-1}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  )
 }

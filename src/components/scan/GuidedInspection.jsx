@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Camera, ChevronRight, AlertTriangle, Gauge, Check, CloudOff, RotateCcw, Undo2, CloudUpload } from 'lucide-react'
+import { Camera, ChevronRight, AlertTriangle, Gauge, Check, CloudOff, RotateCcw, Undo2, CloudUpload, X, Plus, Video } from 'lucide-react'
 import { CameraView } from './CameraView'
+import { WalkaroundCapture, MAX_TOUR_FRAMES } from './WalkaroundCapture'
 import { Button } from '../ui/Button'
 import { Stepper } from '../ui/Stepper'
 import { Spinner } from '../ui/Spinner'
@@ -12,17 +13,27 @@ import { useToast } from '../ui/Toast'
 
 const MAX_MILEAGE = 2_000_000
 
+const CLOSEUP_INSTRUCTION = 'Cadrez de près le détail à documenter : défaut, compteur kilométrique, jante, vitrage…'
+
 /**
- * Guided walkthrough: one photo per step (adapted to the vehicle type).
+ * Two capture modes:
+ * - 'quick': continuous walk-around (WalkaroundCapture), ~1 minute;
+ * - 'guided': one photo per step, adapted to the vehicle type.
+ * Close-ups can be added in both. In guided mode the photo is also checked
+ * for framing by the AI.
  * Each photo is uploaded in the background as soon as it's taken (with an
  * AI framing check on the same upload), so capture never waits on the
  * network. A review screen lets the inspector retake any shot, then the
  * inspection goes through the offline-safe queue (see lib/inspectionQueue):
  * with no network it is kept on the device and sent automatically later.
  */
-export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComplete, onExit }) {
+export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, mode = 'quick', onComplete, onExit }) {
   const toast = useToast()
-  const steps = getCategorySteps(categoryId)
+  const categorySteps = mode === 'guided' ? getCategorySteps(categoryId) : []
+  // Walk-around frames and close-ups: steps created during capture.
+  const [extraSteps, setExtraSteps] = useState([])
+  const counters = useRef({ tour: 0, detail: 0 })
+  const steps = [...categorySteps, ...extraSteps]
   const camRef = useRef(null)
   const inspectionId = useRef(newInspectionId()).current
   const versionRef = useRef(0)
@@ -41,6 +52,7 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
   const [error, setError] = useState(null)
 
   const capturedCount = Object.keys(photos).length
+  const tourCount = extraSteps.filter((s) => s.kind === 'tour').length
   const currentStep = retakeStepId ? steps.find((s) => s.id === retakeStepId) : steps[index]
 
   // Warn before closing the tab with photos that haven't been handed to the queue yet.
@@ -77,7 +89,7 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
 
     // Background upload + framing check: never blocks moving on to the next
     // photo. A failure here is fine — the queue re-uploads at submit time.
-    uploadStepPhoto({ vehicleId, inspectionId, stepId: step.id, image, validate: true, pointName: step.label })
+    uploadStepPhoto({ vehicleId, inspectionId, stepId: step.id, image, validate: !step.kind, pointName: step.label })
       .then((res) => {
         if (photosRef.current[step.id]?.v !== v) return // retaken since
         uploadedRef.current = { ...uploadedRef.current, [step.id]: v }
@@ -93,11 +105,53 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
     if (retakeStepId) {
       setRetakeStepId(null)
       setPhase('review')
-    } else if (index + 1 >= steps.length) {
+    } else if (index + 1 >= categorySteps.length) {
       setPhase('review')
     } else {
       setIndex(index + 1)
     }
+  }
+
+  // One kept walk-around view: stored and uploaded in the background
+  // (no per-frame AI check: the phone already filtered blur/duplicates).
+  function handleTourFrame(image) {
+    counters.current.tour += 1
+    const n = counters.current.tour
+    const step = { id: `tour-${String(n).padStart(2, '0')}`, label: `Vue ${n}`, kind: 'tour' }
+    const v = ++versionRef.current
+    photosRef.current = { ...photosRef.current, [step.id]: { image, v } }
+    setPhotos(photosRef.current)
+    setExtraSteps((list) => [...list, step])
+    uploadStepPhoto({ vehicleId, inspectionId, stepId: step.id, image })
+      .then(() => {
+        if (photosRef.current[step.id]?.v !== v) return
+        uploadedRef.current = { ...uploadedRef.current, [step.id]: v }
+        setUploaded(uploadedRef.current)
+      })
+      .catch(() => {})
+  }
+
+  function addCloseup() {
+    counters.current.detail += 1
+    const n = counters.current.detail
+    const step = { id: `detail-${String(n).padStart(2, '0')}`, label: `Gros plan ${n}`, kind: 'detail', instruction: CLOSEUP_INSTRUCTION }
+    setExtraSteps((list) => [...list, step])
+    setRetakeStepId(step.id)
+    setPhase('capture')
+  }
+
+  function removeStep(stepId) {
+    const { [stepId]: _removed, ...rest } = photosRef.current
+    photosRef.current = rest
+    setPhotos(rest)
+    setExtraSteps((list) => list.filter((s) => s.id !== stepId))
+  }
+
+  function cancelRetake() {
+    // A close-up that was never shot is just dropped.
+    if (!photosRef.current[retakeStepId]) setExtraSteps((list) => list.filter((s) => s.id !== retakeStepId))
+    setRetakeStepId(null)
+    setPhase('review')
   }
 
   function retake(stepId) {
@@ -115,14 +169,19 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
       setError('Kilométrage invalide.')
       return
     }
+    const shot = steps.filter((s) => photosRef.current[s.id])
+    if (shot.length === 0) {
+      setError('Aucune photo à envoyer.')
+      return
+    }
     setError(null)
     setPhase('sending')
-    setProgress({ phase: 'upload', done: 0, total: steps.length })
+    setProgress({ phase: 'upload', done: 0, total: shot.length })
     const record = {
       id: inspectionId,
       vehicleId,
       vehicleLabel,
-      steps: steps.map((s) => ({ stepId: s.id, label: s.label })),
+      steps: shot.map((s) => ({ stepId: s.id, label: s.label })),
       photos: photosRef.current,
       uploaded: { ...uploadedRef.current },
       mileage: km,
@@ -222,11 +281,11 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
 
   if (phase === 'review') {
     const flagged = steps.filter((s) => checks[s.id]?.valid === false)
-    const pendingUploads = steps.filter((s) => uploaded[s.id] !== photos[s.id]?.v).length
+    const pendingUploads = steps.filter((s) => photos[s.id] && uploaded[s.id] !== photos[s.id].v).length
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-center gap-2 rounded-xl bg-status-goodBg px-4 py-3 text-sm font-medium text-status-good">
-          <Check size={18} /> {capturedCount} photos capturées
+          <Check size={18} /> {capturedCount} photo(s) capturée(s)
         </div>
 
         {flagged.length > 0 && (
@@ -239,29 +298,58 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
         )}
 
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {steps.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => retake(s.id)}
-              className="group relative aspect-square overflow-hidden rounded-xl bg-slate-200 text-left"
-              aria-label={`Reprendre la photo ${s.label}`}
-            >
-              {photos[s.id] && <img src={photos[s.id].image} alt={s.label} className="h-full w-full object-cover" />}
-              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-[11px] font-medium text-white">
-                {s.label}
-              </span>
-              {checks[s.id]?.valid === false && (
-                <span className="absolute right-1 top-1 rounded-full bg-status-warn p-1 text-white">
-                  <AlertTriangle size={12} />
+          {steps.filter((s) => photos[s.id] || !s.kind).map((s) => (
+            <div key={s.id} className="relative aspect-square overflow-hidden rounded-xl bg-slate-200">
+              <button
+                type="button"
+                onClick={() => (s.kind === 'tour' ? null : retake(s.id))}
+                className="group block h-full w-full text-left"
+                aria-label={s.kind === 'tour' ? s.label : `Reprendre la photo ${s.label}`}
+              >
+                {photos[s.id] && <img src={photos[s.id].image} alt={s.label} className="h-full w-full object-cover" />}
+                <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-1.5 pb-1 pt-4 text-[11px] font-medium text-white">
+                  {s.label}
                 </span>
+                {checks[s.id]?.valid === false && (
+                  <span className="absolute left-1 top-1 rounded-full bg-status-warn p-1 text-white">
+                    <AlertTriangle size={12} />
+                  </span>
+                )}
+                {s.kind !== 'tour' && (
+                  <span className="absolute inset-0 hidden items-center justify-center bg-black/40 text-white group-hover:flex">
+                    <RotateCcw size={20} />
+                  </span>
+                )}
+              </button>
+              {s.kind && (
+                <button
+                  type="button"
+                  onClick={() => removeStep(s.id)}
+                  className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white hover:bg-status-bad"
+                  aria-label={`Retirer ${s.label}`}
+                >
+                  <X size={12} />
+                </button>
               )}
-              <span className="absolute inset-0 hidden items-center justify-center bg-black/40 text-white group-hover:flex">
-                <RotateCcw size={20} />
-              </span>
-            </button>
+            </div>
           ))}
         </div>
+
+        <div className="flex flex-wrap gap-2">
+          {mode === 'quick' && tourCount < MAX_TOUR_FRAMES && (
+            <Button size="sm" variant="secondary" onClick={() => setPhase('capture')}>
+              <Video size={14} /> Compléter le tour
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={addCloseup}>
+            <Plus size={14} /> Ajouter un gros plan
+          </Button>
+        </div>
+        {mode === 'quick' && (
+          <p className="text-xs text-slate-500">
+            Retirez les vues floues ou hors sujet (✕). Ajoutez un gros plan sur chaque défaut repéré et sur le compteur : plus la photo est proche, plus la détection est précise.
+          </p>
+        )}
 
         <p className="flex items-center gap-1.5 text-xs text-slate-400">
           <CloudUpload size={14} />
@@ -284,12 +372,22 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
     )
   }
 
+  if (mode === 'quick' && !retakeStepId) {
+    return (
+      <WalkaroundCapture
+        initialCount={tourCount}
+        onFrame={handleTourFrame}
+        onDone={() => setPhase('review')}
+      />
+    )
+  }
+
   const stepPosition = retakeStepId ? steps.findIndex((s) => s.id === retakeStepId) : index
   return (
     <div className="space-y-4">
-      <Stepper steps={steps} currentIndex={stepPosition} />
+      {mode === 'guided' && <Stepper steps={categorySteps} currentIndex={Math.min(stepPosition, categorySteps.length - 1)} />}
       <div className="flex items-center justify-between text-sm text-slate-500">
-        <span>{retakeStepId ? 'Nouvelle prise' : `Étape ${index + 1} / ${steps.length}`}</span>
+        <span>{retakeStepId ? 'Nouvelle prise' : `Étape ${index + 1} / ${categorySteps.length}`}</span>
         <span className="font-medium text-slate-700">{currentStep.label}</span>
       </div>
 
@@ -318,13 +416,13 @@ export function GuidedInspection({ vehicleId, vehicleLabel, categoryId, onComple
 
       <Button size="lg" className="w-full" onClick={handleCapture}>
         <Camera size={20} />
-        {retakeStepId ? 'Remplacer la photo' : index + 1 >= steps.length ? 'Dernière photo' : 'Photo suivante'}
+        {retakeStepId ? (photos[retakeStepId] ? 'Remplacer la photo' : 'Prendre la photo') : index + 1 >= categorySteps.length ? 'Dernière photo' : 'Photo suivante'}
         <ChevronRight size={18} />
       </Button>
 
       {retakeStepId ? (
-        <button type="button" onClick={() => { setRetakeStepId(null); setPhase('review') }} className="mx-auto flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-700">
-          <Undo2 size={14} /> Garder la photo actuelle
+        <button type="button" onClick={cancelRetake} className="mx-auto flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand-700">
+          <Undo2 size={14} /> {photos[retakeStepId] ? 'Garder la photo actuelle' : 'Annuler'}
         </button>
       ) : (
         index > 0 && (

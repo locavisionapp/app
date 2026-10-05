@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, KeyRound, Shield, User } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { Field, Input, Select } from '../../components/ui/Field'
+import { Field, Input, PasswordInput } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useAuth } from '../../lib/AuthContext'
 import { useToast } from '../../components/ui/Toast'
@@ -14,7 +14,7 @@ export default function Employees() {
   const isAdmin = profile?.role === 'company_admin'
   const [employees, setEmployees] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ username: '', password: '', role: 'employee' })
+  const [form, setForm] = useState({ username: '', password: '' })
   const [creating, setCreating] = useState(false)
   const [revealed, setRevealed] = useState(null) // { username, password } shown once
 
@@ -33,7 +33,7 @@ export default function Employees() {
     try {
       await api.createEmployee(form)
       setRevealed({ username: form.username, password: form.password })
-      setForm({ username: '', password: '', role: 'employee' })
+      setForm({ username: '', password: '' })
       setShowForm(false)
       refresh()
     } catch (e) {
@@ -52,13 +52,6 @@ export default function Employees() {
     } catch (e) {
       toast.error(e)
     }
-  }
-
-  async function toggleRole(emp) {
-    const role = emp.role === 'company_admin' ? 'employee' : 'company_admin'
-    const label = role === 'company_admin' ? 'administrateur' : 'employé'
-    if (!window.confirm(`Passer "${emp.username}" en ${label} ?`)) return
-    await act(() => api.updateEmployee(emp.uid, { role }), 'Rôle mis à jour.')
   }
 
   async function toggleActive(emp) {
@@ -116,14 +109,9 @@ export default function Employees() {
             />
           </Field>
           <Field label="Mot de passe (8 caractères min.)">
-            <Input type="text" required minLength={8} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <PasswordInput required minLength={8} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
-          <Field label="Rôle">
-            <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              <option value="employee">Employé</option>
-              <option value="company_admin">Administrateur</option>
-            </Select>
-          </Field>
+          <p className="text-xs text-slate-500">L'accès est créé avec le rôle Employé (scan, inspections, flotte). Le compte administrateur est unique.</p>
           <Button type="submit" disabled={creating}>
             {creating ? <Spinner size={16} className="text-white" /> : "Créer l'accès"}
           </Button>
@@ -131,7 +119,7 @@ export default function Employees() {
       )}
 
       <div className="space-y-2">
-        {employees.map((emp) => (
+        {[...employees].sort((a, b) => (a.role === 'company_admin' ? -1 : b.role === 'company_admin' ? 1 : 0)).map((emp) => (
           <Card key={emp.uid} className="flex items-center justify-between p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
@@ -140,22 +128,19 @@ export default function Employees() {
               <div>
                 <p className="font-medium text-slate-900">{emp.username}</p>
                 <p className="text-xs text-slate-500">
-                  {emp.role === 'company_admin' ? 'Administrateur' : 'Employé'} · {emp.active === false ? 'Désactivé' : 'Actif'}
+                  {emp.role === 'company_admin' ? 'Administrateur · compte principal' : `Employé · ${emp.active === false ? 'Désactivé' : 'Actif'}`}
                 </p>
               </div>
             </div>
-            {isAdmin && (
+            {isAdmin && emp.role !== 'company_admin' && (
               <div className="flex items-center gap-1">
                 <button onClick={() => resetPassword(emp)} title="Réinitialiser le mot de passe" className="p-2 text-slate-400 hover:text-brand-700">
                   <KeyRound size={16} />
                 </button>
-                <button onClick={() => toggleRole(emp)} title="Changer le rôle" className="p-2 text-slate-400 hover:text-brand-700">
-                  <Shield size={16} />
-                </button>
                 <button onClick={() => toggleActive(emp)} className="px-2 text-xs text-slate-500 hover:text-brand-700">
                   {emp.active === false ? 'Activer' : 'Désactiver'}
                 </button>
-                <button onClick={() => remove(emp)} className="p-2 text-slate-400 hover:text-status-bad">
+                <button onClick={() => remove(emp)} className="p-2 text-slate-400 hover:text-status-bad" aria-label={`Supprimer ${emp.username}`}>
                   <Trash2 size={16} />
                 </button>
               </div>

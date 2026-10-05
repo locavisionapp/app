@@ -44,3 +44,63 @@ export function captureJpeg(source, canvas, { maxSide, quality }) {
   }
   return dataUrl
 }
+
+// Quick walk-around frames: slightly lighter than guided shots, since there
+// are 25-45 of them and they overlap.
+export const TOUR_PHOTO = { maxSide: 1280, quality: 0.78 }
+
+const PROBE_W = 160
+const THUMB_W = 32
+
+/**
+ * Cheap per-frame probe for the walk-around: a sharpness score (variance of
+ * the Laplacian on a 160px grayscale copy — low = motion blur / out of
+ * focus) and a 32px grayscale thumbnail to tell whether the camera actually
+ * moved since the last kept frame. Runs in a few ms on a phone.
+ */
+export function probeFrame(source, canvas) {
+  const srcW = source.videoWidth || source.width
+  const srcH = source.videoHeight || source.height
+  if (!srcW || !srcH) return null
+  const w = PROBE_W
+  const h = Math.max(1, Math.round((srcH / srcW) * PROBE_W))
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(source, 0, 0, w, h)
+  const { data } = ctx.getImageData(0, 0, w, h)
+  const gray = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i += 1) gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114
+
+  let sum = 0
+  let sumSq = 0
+  let n = 0
+  for (let y = 1; y < h - 1; y += 1) {
+    for (let x = 1; x < w - 1; x += 1) {
+      const i = y * w + x
+      const lap = gray[i - w] + gray[i + w] + gray[i - 1] + gray[i + 1] - 4 * gray[i]
+      sum += lap
+      sumSq += lap * lap
+      n += 1
+    }
+  }
+  const mean = sum / n
+  const sharpness = sumSq / n - mean * mean
+
+  const th = Math.max(1, Math.round((h / w) * THUMB_W))
+  const thumb = new Float32Array(THUMB_W * th)
+  for (let ty = 0; ty < th; ty += 1) {
+    for (let tx = 0; tx < THUMB_W; tx += 1) {
+      thumb[ty * THUMB_W + tx] = gray[Math.floor((ty * h) / th) * w + Math.floor((tx * w) / THUMB_W)]
+    }
+  }
+  return { sharpness, thumb }
+}
+
+/** Mean absolute difference (0-255) between two probe thumbnails. */
+export function thumbDistance(a, b) {
+  if (!a || !b || a.length !== b.length) return Infinity
+  let d = 0
+  for (let i = 0; i < a.length; i += 1) d += Math.abs(a[i] - b[i])
+  return d / a.length
+}

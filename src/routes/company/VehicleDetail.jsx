@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ScanLine, Save, Gauge, Trash2, AlertTriangle, Sparkles, ChevronDown, RotateCcw } from 'lucide-react'
+import { ScanLine, Save, Gauge, Trash2, AlertTriangle, Sparkles, ChevronDown, RotateCcw, Wrench, ClipboardCheck } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Field, Input, Select } from '../../components/ui/Field'
@@ -12,6 +12,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { getCategoryLabel } from '../../config/vehicleCategories'
 import { SPEC_GROUPS } from '../../config/vehicleSpecs'
 import { api } from '../../lib/api'
+import { DamageReview, DamagePhoto } from '../../components/scan/DamageReview'
 
 const DATE_FORMAT = { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }
 
@@ -128,8 +129,23 @@ export default function VehicleDetail() {
   const groups = SPEC_GROUPS.map((g) => ({ ...g, fields: g.fields.filter((f) => vehicle[f.key] != null && vehicle[f.key] !== '') })).filter(
     (g) => g.fields.length > 0
   )
-  const latestInspection = inspections?.[0]
-  const currentIssues = latestInspection && latestInspection.status !== 'green' ? latestInspection.damages || [] : []
+  const openDamages = (vehicle.knownDamages || []).filter((d) => d.status === 'open')
+  const pendingReviews = (inspections || []).filter((i) => i.review?.status === 'pending')
+
+  async function markRepaired(damage) {
+    if (!window.confirm(`Marquer comme réparé : ${damage.location} — ${damage.description} ?`)) return
+    try {
+      setVehicle(await api.updateDamageStatus(id, damage.id, 'repaired'))
+      toast.success('Défaut marqué comme réparé.')
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
+  function onInspectionReviewed(updated) {
+    setInspections((list) => list.map((i) => (i.id === updated.id ? updated : i)))
+    api.getVehicle(id).then(setVehicle).catch(() => {})
+  }
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-4">
@@ -153,21 +169,52 @@ export default function VehicleDetail() {
         </p>
       </div>
 
-      {currentIssues.length > 0 && (
-        <Card className={`space-y-2 p-4 ${latestInspection.status === 'red' ? 'border-status-bad bg-status-badBg' : 'border-status-warn bg-status-warnBg'}`}>
-          <p className={`flex items-center gap-1.5 text-sm font-semibold ${latestInspection.status === 'red' ? 'text-status-bad' : 'text-status-warn'}`}>
-            <AlertTriangle size={16} /> Problèmes actuels ({currentIssues.length})
-          </p>
-          <ul className="space-y-1 text-sm text-slate-700">
-            {currentIssues.map((d, i) => (
-              <li key={i}>
-                <span className="font-medium">{d.location}</span> — {d.description}
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-slate-500">Relevés lors de la dernière inspection. Se mettent à jour au prochain scan.</p>
+      {pendingReviews.length > 0 && (
+        <Card className="flex items-center gap-3 border-status-warn bg-status-warnBg p-4 text-sm text-status-warn">
+          <ClipboardCheck size={18} className="shrink-0" />
+          <span className="flex-1">{pendingReviews.length} inspection(s) à valider : confirmez les nouveaux défauts dans l'historique ci-dessous.</span>
         </Card>
       )}
+
+      <Card className="space-y-3 p-4">
+        <div className="flex items-center justify-between">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+            <AlertTriangle size={15} /> Défauts connus ({openDamages.length})
+          </p>
+          {vehicle.lastValidatedInspectionAt && (
+            <span className="text-xs text-slate-400">Référence : scan du {new Date(vehicle.lastValidatedInspectionAt).toLocaleDateString('fr-FR')}</span>
+          )}
+        </div>
+        {openDamages.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {vehicle.lastValidatedInspectionId ? 'Aucun défaut connu sur ce véhicule.' : "Pas encore de scan de référence : le premier scan validé servira de base de comparaison."}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {openDamages.map((d) => (
+              <div key={d.id} className="flex gap-3 rounded-xl border border-slate-200 p-3">
+                <DamagePhoto url={d.photoUrl} box={d.box} className="w-24 shrink-0" label={`${d.location} — ${d.description}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-900">{d.location}</p>
+                  <p className="text-sm text-slate-500">{d.description}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {d.type} · gravité {d.severity}/5 · relevé le {new Date(d.firstSeenAt).toLocaleDateString('fr-FR')}
+                    {d.worsenedAt ? ` · aggravé le ${new Date(d.worsenedAt).toLocaleDateString('fr-FR')}` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => markRepaired(d)}
+                  className="flex h-9 shrink-0 items-center gap-1 self-start rounded-lg px-2 text-xs text-slate-500 hover:bg-slate-100 hover:text-status-good"
+                  title="Marquer comme réparé"
+                >
+                  <Wrench size={14} /> Réparé
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <Button as={Link} to={`/app/scan?vehicle=${vehicle.id}`} state={{ vehicle }} className="w-full">
         <ScanLine size={18} /> Lancer une nouvelle inspection
@@ -253,7 +300,7 @@ export default function VehicleDetail() {
         ) : (
           <div className="space-y-2">
             {inspections.map((insp) => (
-              <InspectionCard key={insp.id} inspection={insp} />
+              <InspectionCard key={insp.id} inspection={insp} vehicleId={id} knownDamages={vehicle.knownDamages || []} onReviewed={onInspectionReviewed} />
             ))}
             {inspectionsCursor && (
               <Button variant="secondary" className="w-full" onClick={loadMoreInspections} disabled={loadingMore}>
@@ -267,16 +314,24 @@ export default function VehicleDetail() {
   )
 }
 
-function InspectionCard({ inspection: insp }) {
-  const [open, setOpen] = useState(false)
+function InspectionCard({ inspection: insp, vehicleId, knownDamages, onReviewed }) {
+  const pending = insp.review?.status === 'pending'
+  const [open, setOpen] = useState(pending)
   const photos = (insp.photos || []).filter(Boolean)
   return (
-    <Card className="overflow-hidden">
+    <Card className={pending ? 'overflow-hidden border-status-warn' : 'overflow-hidden'}>
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 p-4 text-left" aria-expanded={open}>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900">{new Date(insp.createdAt).toLocaleDateString('fr-FR', DATE_FORMAT)}</p>
+          <p className="text-sm font-medium text-slate-900">
+            {new Date(insp.createdAt).toLocaleDateString('fr-FR', DATE_FORMAT)}
+            {insp.mode === 'baseline' && <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">Référence</span>}
+            {pending && <span className="ml-2 rounded-full bg-status-warnBg px-2 py-0.5 text-[11px] font-medium text-status-warn">À valider</span>}
+          </p>
           <p className="text-sm text-slate-500">
-            {insp.damages?.length || 0} point(s) relevé(s) · score {insp.healthScore ?? '—'}/10
+            {insp.mode === 'comparison'
+              ? `${insp.newDamageCount || 0} nouveau(x) défaut(s)`
+              : `${insp.damages?.length || 0} point(s) relevé(s)`}
+            {insp.healthScore != null ? ` · score ${insp.healthScore}/10` : ''}
             {insp.mileage != null ? ` · ${insp.mileage.toLocaleString('fr-FR')} km` : ''}
           </p>
         </div>
@@ -288,24 +343,18 @@ function InspectionCard({ inspection: insp }) {
       {open && (
         <div className="space-y-3 border-t border-slate-100 p-4">
           {insp.summary && <p className="text-sm text-slate-600">{insp.summary}</p>}
-          {insp.damages?.length > 0 && (
-            <ul className="space-y-1 text-sm text-slate-700">
-              {insp.damages.map((d, i) => (
-                <li key={i}>
-                  <span className="font-medium">{d.location}</span>
-                  {d.type ? ` (${d.type}${d.severity ? `, gravité ${d.severity}/5` : ''})` : ''} — {d.description}
-                </li>
-              ))}
-            </ul>
-          )}
+          <DamageReview vehicleId={vehicleId} inspection={insp} knownDamages={knownDamages} onUpdated={onReviewed} />
           {photos.length > 0 && (
-            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
-              {photos.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
-                  <img src={url} alt={`Photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
-                </a>
-              ))}
-            </div>
+            <details>
+              <summary className="cursor-pointer text-sm text-slate-500 hover:text-brand-700">Toutes les photos ({photos.length})</summary>
+              <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-6">
+                {photos.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden rounded-lg bg-slate-100">
+                    <img src={url} alt={`Photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       )}

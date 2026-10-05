@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { Pencil } from 'lucide-react'
+import { Pencil, Video, ListChecks, ChevronRight } from 'lucide-react'
 import { PlateScanStep } from '../../components/scan/PlateScanStep'
 import { GuidedInspection } from '../../components/scan/GuidedInspection'
 import { ScanResult } from '../../components/scan/ScanResult'
@@ -11,7 +11,18 @@ import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { BackButton } from '../../components/ui/BackButton'
 import { VEHICLE_CATEGORIES } from '../../config/vehicleCategories'
 import { api } from '../../lib/api'
+import { useToast } from '../../components/ui/Toast'
 import { formatPlateInput, isPlateComplete } from '../../lib/plate'
+
+const MODE_KEY = 'locavision.captureMode'
+
+function readMode() {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'guided' ? 'guided' : 'quick'
+  } catch {
+    return 'quick'
+  }
+}
 
 const STEPS = { PLATE: 'plate', MANUAL: 'manual', INSPECTION: 'inspection', RESULT: 'result' }
 const EMPTY_MANUAL = { licensePlate: '', brand: '', model: '', category: 'citadine', agencyId: '' }
@@ -24,6 +35,7 @@ const EMPTY_MANUAL = { licensePlate: '', brand: '', model: '', category: 'citadi
  */
 export default function Scan() {
   const navigate = useNavigate()
+  const toast = useToast()
   const location = useLocation()
   const [searchParams] = useSearchParams()
   const presetVehicleId = searchParams.get('vehicle')
@@ -38,6 +50,8 @@ export default function Scan() {
   const [agencies, setAgencies] = useState([])
   const [loadError, setLoadError] = useState(null)
   const [manualStage, setManualStage] = useState('plate') // plate | confirm | details
+  const [captureMode, setCaptureMode] = useState(null) // null = not chosen yet | 'quick' | 'guided'
+  const lastMode = readMode()
   const [lookup, setLookup] = useState(null)
   const [lookingUp, setLookingUp] = useState(false)
 
@@ -90,7 +104,9 @@ export default function Scan() {
     setCreateError(null)
     try {
       const data = await api.lookupPlate(manual.licensePlate)
-      if (data.error) {
+      if (data.existingVehicleId) {
+        openExisting(data)
+      } else if (data.error) {
         openDetails({ licensePlate: data.licensePlate || manual.licensePlate })
       } else {
         setLookup(data)
@@ -103,7 +119,15 @@ export default function Scan() {
     }
   }
 
+  // A plate already in the fleet opens that vehicle's record (with its
+  // history and a "new inspection" button) instead of creating anything.
+  function openExisting(data) {
+    toast.success(`${data.licensePlate} est déjà dans votre flotte.`)
+    navigate(`/app/vehicles/${data.existingVehicleId}`)
+  }
+
   function handleIdentified(data) {
+    if (data.existingVehicleId) return openExisting(data)
     if (data.manual) {
       const p = data.prefill || {}
       setCreateError(null)
@@ -294,7 +318,44 @@ export default function Scan() {
           }}
         />
         <h1 className="text-xl font-bold text-slate-900">{vehicle.brand} {vehicle.model} · {vehicle.licensePlate}</h1>
+        {!captureMode ? (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-500">
+              {vehicle.lastValidatedInspectionId
+                ? 'Ce scan sera comparé au précédent : seuls les changements vous seront signalés.'
+                : 'Premier scan de ce véhicule : il servira de référence pour les suivants.'}
+            </p>
+            {[
+              { id: 'quick', icon: Video, title: 'Tour rapide', text: "Filmez en faisant le tour du véhicule (~1 min). L'app garde automatiquement les vues nettes." },
+              { id: 'guided', icon: ListChecks, title: 'Photo par photo', text: 'Parcours guidé en étapes fixes, avec contrôle du cadrage de chaque photo.' },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem(MODE_KEY, m.id)
+                  } catch {
+                    // preference only
+                  }
+                  setCaptureMode(m.id)
+                }}
+                className={`flex w-full items-center gap-3 rounded-2xl border bg-white p-4 text-left transition-colors hover:border-brand-400 ${lastMode === m.id ? 'border-brand-500 ring-2 ring-brand-100' : 'border-slate-200'}`}
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+                  <m.icon size={20} />
+                </span>
+                <span className="flex-1">
+                  <span className="block font-semibold text-slate-900">{m.title}</span>
+                  <span className="block text-sm text-slate-500">{m.text}</span>
+                </span>
+                <ChevronRight size={18} className="text-slate-400" />
+              </button>
+            ))}
+          </div>
+        ) : (
         <GuidedInspection
+          mode={captureMode}
           vehicleId={vehicle.id}
           vehicleLabel={`${vehicle.brand} ${vehicle.model} · ${vehicle.licensePlate}`.trim()}
           categoryId={vehicle.category}
@@ -304,6 +365,7 @@ export default function Scan() {
             setStep(STEPS.RESULT)
           }}
         />
+        )}
       </div>
     )
   }
