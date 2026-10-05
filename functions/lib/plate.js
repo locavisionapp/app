@@ -23,7 +23,7 @@ async function ocrPlateFromImage(imageBase64) {
   const response = await fetchWithTimeout(
     'https://api.platerecognizer.com/v1/plate-reader/',
     { method: 'POST', headers: { Authorization: `Token ${PLATE_RECOGNIZER_TOKEN}` }, body: formData },
-    12000
+    8000
   )
   if (!response.ok) return null
 
@@ -62,7 +62,7 @@ async function fetchVehicleDataFromSIV(plate) {
       const response = await fetchWithTimeout(
         endpoint.url,
         { headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': endpoint.host, ...(endpoint.extraHeaders || {}) } },
-        10000
+        6000
       )
       if (!response.ok) continue
       const data = await response.json()

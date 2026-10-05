@@ -62,6 +62,9 @@ router.put(
     const doc = await ref.get()
     if (!doc.exists || doc.data().companyId !== req.auth.companyId) throw new ApiError(404, 'Employé introuvable.')
     if (req.params.uid === req.auth.uid && req.body?.active === false) throw new ApiError(400, 'Vous ne pouvez pas désactiver votre propre compte.')
+    if (req.params.uid === req.auth.uid && req.body?.role === 'employee') {
+      throw new ApiError(400, 'Vous ne pouvez pas retirer vos propres droits administrateur.')
+    }
 
     const updates = {}
     if (req.body?.role === 'company_admin' || req.body?.role === 'employee') updates.role = req.body.role

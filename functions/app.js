@@ -2,7 +2,6 @@ const express = require('express')
 const cors = require('cors')
 const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
-const { db } = require('./lib/db')
 const { authenticate } = require('./lib/auth')
 const { logUsage } = require('./lib/usage')
 const { asyncRoute } = require('./lib/asyncRoute')
@@ -21,19 +20,27 @@ const companyRoutes = require('./routes/company')
 // per platform.
 const app = express()
 
-app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }))
-app.use(cors({ origin: true }))
-app.use(express.json({ limit: '15mb' }))
+// Behind Vercel's / Google's proxy: trust the first hop so req.ip is the real
+// client IP. Without this every caller shares the proxy's IP — i.e. one
+// global rate-limit bucket for all customers.
+app.set('trust proxy', 1)
 
-// Coarse abuse protection. Per-company/API-key throttling happens on top of
-// this via req.auth once authenticated (see routes), this layer just caps
-// raw request volume per IP before we've even resolved who's calling.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }))
+app.use(cors({ origin: true, exposedHeaders: ['X-Next-Cursor'] }))
+// Vercel rejects request bodies over 4.5MB before they reach us; stay under
+// it so the error is ours (clear message) rather than a bare platform 413.
+// Photos are uploaded one per request (~0.5MB each), never batched.
+app.use(express.json({ limit: '4mb' }))
+
+// Coarse abuse protection, per client IP, before we've even resolved who's
+// calling. Sized for a whole agency behind one NAT running inspections at
+// the same time (~20 calls per inspection).
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 120,
+  limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many requests, please slow down.' },
+  message: { error: 'Trop de requêtes, réessayez dans une minute.' },
 })
 
 const v1 = express.Router()
@@ -43,18 +50,16 @@ v1.get(
   '/me',
   asyncRoute(async (req, res) => {
     const { role, companyId, uid } = req.auth
-    let companyName = null
-    let enabledModules = null
-    let companyStatus = null
-    let trialEndsAt = null
-    if (companyId) {
-      const doc = await db.collection('companies').doc(companyId).get()
-      companyName = doc.data()?.name || null
-      enabledModules = doc.data()?.enabledModules || MODULES
-      companyStatus = doc.data()?.status || null
-      trialEndsAt = doc.data()?.trialEndsAt || null
-    }
-    res.json({ role, companyId, companyName, uid, enabledModules, companyStatus, trialEndsAt })
+    const company = req.company || null
+    res.json({
+      role,
+      companyId,
+      companyName: company?.name || null,
+      uid,
+      enabledModules: company ? company.enabledModules || MODULES : null,
+      companyStatus: company?.status || null,
+      trialEndsAt: company?.trialEndsAt || null,
+    })
   })
 )
 
@@ -74,10 +79,16 @@ app.use('/v1', (req, res) => res.status(404).json({ error: 'Not found.' }))
 // generic message. Route-specific user-facing errors are thrown as
 // ApiError(status, message) before reaching here.
 app.use((err, req, res, next) => {
-  console.error('[api] unhandled error', err)
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Requête trop volumineuse (4 Mo max). Envoyez les photos une par une.' })
+  }
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Corps de requête JSON invalide.' })
+  }
+  if (!err.expose) console.error('[api] unhandled error', err)
   const status = err.status || 500
-  const message = err.expose ? err.message : status === 400 ? 'Invalid request.' : 'Internal server error.'
-  res.status(status).json({ error: message })
+  const message = err.expose ? err.message : status === 400 ? 'Requête invalide.' : 'Erreur interne du serveur. Réessayez dans un instant.'
+  res.status(status).json({ error: message, ...(err.expose && err.payload ? err.payload : {}) })
 })
 
 module.exports = app

@@ -31,9 +31,19 @@ async function discoverModels() {
   }
 }
 
-async function callGemini(contents, retryIndex = 0) {
+/**
+ * Calls Gemini, falling back through availableModels on quota/availability
+ * errors. `timeoutMs` is per attempt, `maxAttempts` caps the fallback chain
+ * and `budgetMs` caps the whole call (all attempts together), so it can never
+ * outlive the serverless function's own time limit (vercel.json maxDuration).
+ */
+async function callGemini(contents, { timeoutMs = 20000, maxAttempts = 3, budgetMs = 45000, deadline } = {}, retryIndex = 0) {
+  deadline = deadline || Date.now() + budgetMs
   await discoverModels()
-  if (retryIndex >= availableModels.length) throw new Error('Gemini: all model fallbacks exhausted.')
+  const lastIndex = Math.min(availableModels.length, maxAttempts) - 1
+  if (retryIndex > lastIndex) throw new Error('Gemini: all model fallbacks exhausted.')
+  const attemptTimeout = Math.min(timeoutMs, deadline - Date.now())
+  if (attemptTimeout < 2000) throw new Error('Gemini: time budget exhausted.')
   const modelId = availableModels[retryIndex]
   const url = `https://generativelanguage.googleapis.com/v1beta/${modelId}:generateContent?key=${API_KEY}`
   try {
@@ -42,19 +52,19 @@ async function callGemini(contents, retryIndex = 0) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents, generationConfig: { temperature: 0.1, topP: 0.95, maxOutputTokens: 2048, response_mime_type: 'application/json' } }),
+        body: JSON.stringify({ contents, generationConfig: { temperature: 0.1, topP: 0.95, maxOutputTokens: 8192, response_mime_type: 'application/json' } }),
       },
-      20000
+      attemptTimeout
     )
     const data = await response.json()
-    if (response.status === 429 || response.status === 404) return callGemini(contents, retryIndex + 1)
-    if (!response.ok) throw new Error(data.error?.message || 'Gemini API error')
+    if (!response.ok) throw new Error(data.error?.message || `Gemini API error (${response.status})`)
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!text) throw new Error(`Gemini returned no content (${data.candidates?.[0]?.finishReason || 'unknown reason'})`)
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')
     return JSON.parse(text.substring(start, end + 1))
   } catch (error) {
-    if (retryIndex < availableModels.length - 1) return callGemini(contents, retryIndex + 1)
+    if (retryIndex < lastIndex) return callGemini(contents, { timeoutMs, maxAttempts, deadline }, retryIndex + 1)
     throw error
   }
 }
@@ -74,7 +84,7 @@ async function extractVehicleInfoFromPlate(imageBase64) {
   "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
   "co2": number, "critAir": number, "consumptionMixed": number }`
   try {
-    return await callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }])
+    return await callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 15000, maxAttempts: 2, budgetMs: 15000 })
   } catch (error) {
     return { error: true, message: error.message }
   }
@@ -95,7 +105,7 @@ async function enrichVehicleSpecs({ brand, model, year, category }) {
   "length": number, "width": number, "height": number, "weight": number, "trunkVolume": number,
   "co2": number, "critAir": number, "consumptionMixed": number }`
   try {
-    return await callGemini([{ parts: [{ text: prompt }] }])
+    return await callGemini([{ parts: [{ text: prompt }] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 15000 })
   } catch (error) {
     return {}
   }
@@ -106,7 +116,7 @@ async function validateCapture(imageBase64, pointName, vehicleType = 'véhicule'
   const prompt = `Valide cette photo pour l'étape "${pointName}" d'un(e) ${vehicleType}.
   La photo doit être claire, bien cadrée et montrer la partie demandée.
   Réponds UNIQUEMENT en JSON: { "valid": true/false, "reason": "string", "instruction": "string" }`
-  return callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }])
+  return callGemini([{ parts: [{ text: prompt }, inlineImage(imageBase64)] }], { timeoutMs: 12000, maxAttempts: 2, budgetMs: 20000 })
 }
 
 /** Full inspection analysis (all photos from the guided walkthrough). */
@@ -122,7 +132,9 @@ async function analyzeBatchInspection(images, vehicleType = 'véhicule') {
     "health_score": 1-10
   }`
   const parts = [{ text: prompt }, ...images.map((img) => inlineImage(img.image))]
-  return callGemini([{ parts }])
+  // 16 photos take a while to analyze: allow one long attempt, and a
+  // fallback model only with whatever time is left of the 60s function limit.
+  return callGemini([{ parts }], { timeoutMs: 45000, maxAttempts: 2, budgetMs: 48000 })
 }
 
 /** Diff against the vehicle's previous inspection. */

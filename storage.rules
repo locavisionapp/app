@@ -1,8 +1,8 @@
 rules_version = '2';
 
-// Inspection photos are written by the API (Admin SDK, which bypasses these
-// rules) and served for reading via their public GCS URL. The client never
-// uses the Storage SDK directly.
+// Inspection photos are private: written and read by the API only (Admin
+// SDK, which bypasses these rules) and shown to users through short-lived
+// signed URLs. The client never uses the Storage SDK directly.
 service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {

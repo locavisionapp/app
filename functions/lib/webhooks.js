@@ -19,7 +19,7 @@ async function dispatchWebhook(companyId, event, data) {
 
     await fetchWithTimeout(
       webhookUrl,
-      { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-LocaVision-Signature': signature }, body: payload },
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-LocaVision-Signature': signature }, body: payload, redirect: 'manual' },
       8000
     )
   } catch (e) {

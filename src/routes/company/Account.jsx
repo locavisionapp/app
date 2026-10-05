@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useAuth } from '../../lib/AuthContext'
+import { useToast } from '../../components/ui/Toast'
 import { api } from '../../lib/api'
 
 const STATUS_LABELS = {
@@ -16,7 +17,9 @@ const STATUS_LABELS = {
 
 export default function Account() {
   const { profile } = useAuth()
+  const toast = useToast()
   const isAdmin = profile?.role === 'company_admin'
+  const [loadError, setLoadError] = useState(null)
   const [company, setCompany] = useState(null)
   const [quotes, setQuotes] = useState(null)
   const [newKey, setNewKey] = useState(null)
@@ -26,10 +29,14 @@ export default function Account() {
   const [regenerating, setRegenerating] = useState(false)
 
   function refresh() {
-    api.getMyCompany().then((c) => {
-      setCompany(c)
-      setWebhookUrl(c.webhookUrl || '')
-    })
+    setLoadError(null)
+    api
+      .getMyCompany()
+      .then((c) => {
+        setCompany(c)
+        setWebhookUrl(c.webhookUrl || '')
+      })
+      .catch((e) => setLoadError(e.message))
     api.getMyQuotes().then(setQuotes).catch(() => setQuotes([]))
   }
 
@@ -41,7 +48,10 @@ export default function Account() {
     try {
       const { apiKey } = await api.regenerateMyApiKey()
       setNewKey(apiKey)
+      setCopied(false)
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setRegenerating(false)
     }
@@ -50,13 +60,26 @@ export default function Account() {
   async function saveWebhook() {
     setSavingWebhook(true)
     try {
-      await api.updateMyWebhook(webhookUrl)
+      await api.updateMyWebhook(webhookUrl.trim())
+      toast.success(webhookUrl.trim() ? 'Webhook enregistré.' : 'Webhook désactivé.')
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setSavingWebhook(false)
     }
   }
 
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-2xl p-4">
+        <Card className="space-y-3 p-8 text-center text-sm">
+          <p className="text-status-bad">{loadError}</p>
+          <Button size="sm" variant="secondary" onClick={refresh}>Réessayer</Button>
+        </Card>
+      </div>
+    )
+  }
   if (!company) return <FullscreenSpinner />
 
   const status = STATUS_LABELS[company.status] || { label: company.status, className: 'text-slate-500' }
@@ -82,16 +105,10 @@ export default function Account() {
         )}
       </Card>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="p-4 text-center">
-          <p className="text-lg font-bold text-slate-900">{company.apiCallCount ?? 0}</p>
-          <p className="text-xs text-slate-500">Appels API (total)</p>
-        </Card>
-        <Card className="p-4 text-center">
-          <p className="text-lg font-bold text-slate-900">{company.estimatedApiCostEur ?? 0} €</p>
-          <p className="text-xs text-slate-500">Coût API estimé</p>
-        </Card>
-      </div>
+      <Card className="p-4 text-center">
+        <p className="text-lg font-bold text-slate-900">{(company.apiCallCount ?? 0).toLocaleString('fr-FR')}</p>
+        <p className="text-xs text-slate-500">Appels API (total)</p>
+      </Card>
 
       <Card className="space-y-3 p-4">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
@@ -103,7 +120,16 @@ export default function Account() {
         {newKey && (
           <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 font-mono text-xs">
             <code className="flex-1 overflow-x-auto">{newKey}</code>
-            <button onClick={() => { navigator.clipboard.writeText(newKey); setCopied(true) }} className="shrink-0 text-slate-500 hover:text-slate-700">
+            <button
+              onClick={() =>
+                navigator.clipboard
+                  .writeText(newKey)
+                  .then(() => setCopied(true))
+                  .catch(() => toast.error('Copie impossible : sélectionnez la clé et copiez-la manuellement.'))
+              }
+              className="shrink-0 text-slate-500 hover:text-slate-700"
+              aria-label="Copier la clé"
+            >
               {copied ? <Check size={14} /> : <Copy size={14} />}
             </button>
           </div>
@@ -126,7 +152,7 @@ export default function Account() {
           </p>
           <div className="flex items-end gap-2">
             <Field label="URL du webhook (https://)" className="flex-1">
-              <Input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://votre-crm.example.com/webhooks/locavision" />
+              <Input type="url" inputMode="url" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} placeholder="https://votre-crm.example.com/webhooks/locavision" />
             </Field>
             <Button size="sm" onClick={saveWebhook} disabled={savingWebhook}>
               {savingWebhook ? <Spinner size={14} className="text-white" /> : 'Enregistrer'}

@@ -4,6 +4,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
+import { useToast } from '../../components/ui/Toast'
 import { api } from '../../lib/api'
 
 const ALL_MODULES = [
@@ -39,6 +40,7 @@ function CopyField({ label, value }) {
 }
 
 function QuotesPanel({ companyId }) {
+  const toast = useToast()
   const [quotes, setQuotes] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ pricingModel: 'flat', amount: 0, maxAgencies: '', maxVehicles: '', maxScansPerMonth: '', notes: '' })
@@ -65,17 +67,22 @@ function QuotesPanel({ companyId }) {
       })
       setShowForm(false)
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
   }
 
   async function markPaid(quoteId) {
-    const paymentReference = window.prompt('Référence du virement reçu (optionnel) :') || ''
+    const paymentReference = window.prompt('Référence du virement reçu (optionnel) :')
+    if (paymentReference === null) return // cancelled: don't activate the license
     setBusy(true)
     try {
       await api.markQuotePaid(companyId, quoteId, { paymentReference })
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
@@ -149,6 +156,7 @@ function QuotesPanel({ companyId }) {
 }
 
 function CompanyRow({ company, onChange }) {
+  const toast = useToast()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [modules, setModules] = useState(company.enabledModules || ['scan', 'fleet', 'agencies', 'api'])
@@ -159,6 +167,8 @@ function CompanyRow({ company, onChange }) {
     try {
       const next = company.status === 'suspended' ? 'active' : 'suspended'
       onChange(await api.updateCompanyStatus(company.id, next))
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
@@ -173,6 +183,8 @@ function CompanyRow({ company, onChange }) {
     setBusy(true)
     try {
       onChange(await api.updateCompanyModules(company.id, modules))
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
@@ -184,6 +196,8 @@ function CompanyRow({ company, onChange }) {
     try {
       const { apiKey } = await api.regenerateCompanyApiKey(company.id)
       setNewKey(apiKey)
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
@@ -195,6 +209,8 @@ function CompanyRow({ company, onChange }) {
     try {
       await api.deleteCompany(company.id)
       onChange(null, company.id)
+    } catch (e) {
+      toast.error(e)
     } finally {
       setBusy(false)
     }
@@ -276,6 +292,7 @@ function CompanyRow({ company, onChange }) {
 }
 
 export default function Companies() {
+  const toast = useToast()
   const [companies, setCompanies] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', contactEmail: '', slug: '', initialUsername: 'admin', trialDays: '' })
@@ -283,7 +300,10 @@ export default function Companies() {
   const [created, setCreated] = useState(null)
 
   function refresh() {
-    api.listCompanies().then(setCompanies).catch(() => setCompanies([]))
+    api.listCompanies().then(setCompanies).catch((e) => {
+      setCompanies([])
+      toast.error(e)
+    })
   }
 
   useEffect(refresh, [])
@@ -297,6 +317,8 @@ export default function Companies() {
       setForm({ name: '', contactEmail: '', slug: '', initialUsername: 'admin', trialDays: '' })
       setShowForm(false)
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setCreating(false)
     }

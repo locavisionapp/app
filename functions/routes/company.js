@@ -3,18 +3,40 @@ const express = require('express')
 const { db } = require('../lib/db')
 const { requireRole, generateApiKey, hashApiKey } = require('../lib/auth')
 const { asyncRoute, ApiError } = require('../lib/asyncRoute')
-const { API_COST_PER_CALL_EUR } = require('../lib/config')
 
 const router = express.Router()
 const companyRole = requireRole('company_admin', 'employee')
 const adminOnly = requireRole('company_admin')
+
+// Webhooks are POSTed from our servers: refuse URLs pointing at internal
+// hosts (SSRF), not just non-https ones.
+function assertPublicHttpsUrl(value) {
+  if (value.length > 500) throw new ApiError(400, 'URL de webhook trop longue.')
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ApiError(400, 'URL de webhook invalide.')
+  }
+  if (url.protocol !== 'https:') throw new ApiError(400, "L'URL du webhook doit être en https://")
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  const isPrivate =
+    host === 'localhost' ||
+    /\.(localhost|internal|local)$/.test(host) ||
+    /^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    host === '::1' ||
+    /^f[cd][0-9a-f]{2}:/.test(host) ||
+    /^fe80:/.test(host)
+  if (isPrivate) throw new ApiError(400, "L'URL du webhook doit pointer vers un serveur public.")
+}
 
 function companyRef(req) {
   return db.collection('companies').doc(req.auth.companyId)
 }
 
 // Self-service view of your own company account — API key status, usage,
-// estimated cost, license/trial, module access. No plaintext API key is
+// license/trial, module access (internal cost estimates stay admin-side). No plaintext API key is
 // ever returned here; only a regenerate action reveals a new one, once.
 router.get(
   '/company',
@@ -34,10 +56,10 @@ router.get(
       license: data.license || null,
       enabledModules: data.enabledModules || null,
       apiCallCount,
-      estimatedApiCostEur: Math.round(apiCallCount * API_COST_PER_CALL_EUR * 100) / 100,
       hasApiKey: !!data.apiKeyHash,
       webhookUrl: data.webhookUrl || null,
-      webhookSecret: data.webhookSecret || null,
+      // The signing secret lets anyone forge webhook events: admins only.
+      webhookSecret: req.auth.role === 'company_admin' ? data.webhookSecret || null : null,
     })
   })
 )
@@ -57,7 +79,7 @@ router.put(
   adminOnly,
   asyncRoute(async (req, res) => {
     const webhookUrl = String(req.body?.webhookUrl || '').trim()
-    if (webhookUrl && !/^https:\/\//.test(webhookUrl)) throw new ApiError(400, 'L\'URL du webhook doit être en https://')
+    if (webhookUrl) assertPublicHttpsUrl(webhookUrl)
 
     const doc = await companyRef(req).get()
     const webhookSecret = doc.data()?.webhookSecret || crypto.randomBytes(24).toString('hex')

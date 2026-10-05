@@ -20,13 +20,23 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
+        start_url: '/app',
+        scope: '/',
+        lang: 'fr',
+        categories: ['business', 'productivity'],
         icons: [
           { src: 'icon-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // SPA: serve the cached app shell for navigations (so the installed
+        // app opens offline), but never for API calls.
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/v1\//, /^\/api\//],
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
@@ -43,7 +53,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // No public source maps in production: they'd publish the full,
+    // commented source of the app.
+    sourcemap: false,
     rollupOptions: {
       output: {
         // Split rarely-changing vendor code from app code so a deploy only

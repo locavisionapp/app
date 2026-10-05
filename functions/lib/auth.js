@@ -37,7 +37,9 @@ async function checkCompanyAccess(companyDoc) {
  * Resolves the caller from the Authorization header:
  * - `Bearer sk_live_...` -> company API key (third-party CRM integration)
  * - `Bearer <idToken>`   -> Firebase Auth user (LocaVision web app)
- * Attaches req.auth = { uid, role, companyId, via }.
+ * Attaches req.auth = { uid, role, companyId, via } and, for company callers,
+ * req.company (the company document's data, already loaded for the access
+ * check — routes reuse it instead of re-reading it).
  */
 async function authenticate(req, res, next) {
   const header = req.headers.authorization || ''
@@ -54,10 +56,16 @@ async function authenticate(req, res, next) {
       const access = await checkCompanyAccess(companyDoc)
       if (!access.ok) return res.status(403).json({ error: access.reason })
       req.auth = { uid: null, role: 'company_admin', companyId: companyDoc.id, via: 'apikey' }
+      req.company = companyDoc.data()
       return next()
     }
 
-    const decoded = await auth.verifyIdToken(token)
+    let decoded
+    try {
+      decoded = await auth.verifyIdToken(token)
+    } catch (e) {
+      return res.status(401).json({ error: 'Jeton invalide ou expiré.' })
+    }
     const userDoc = await db.collection('users').doc(decoded.uid).get()
     if (!userDoc.exists) return res.status(403).json({ error: 'Utilisateur non provisionné.' })
     const { role, companyId, active } = userDoc.data()
@@ -68,12 +76,15 @@ async function authenticate(req, res, next) {
       if (!companyDoc.exists) return res.status(403).json({ error: 'Entreprise introuvable.' })
       const access = await checkCompanyAccess(companyDoc)
       if (!access.ok) return res.status(403).json({ error: access.reason })
+      req.company = companyDoc.data()
     }
 
     req.auth = { uid: decoded.uid, role, companyId: companyId || null, via: 'firebase' }
     return next()
   } catch (e) {
-    return res.status(401).json({ error: 'Jeton invalide ou expiré.' })
+    // Datastore outage etc. — a server error, not a bad credential: don't
+    // tell the client its (valid) session is invalid.
+    return next(e)
   }
 }
 
@@ -86,11 +97,10 @@ function requireRole(...roles) {
 
 /** Gates a route behind a company feature module (see config.js#MODULES). */
 function requireModule(moduleName) {
-  return async (req, res, next) => {
+  return (req, res, next) => {
     if (req.auth.role === 'platform_admin') return next() // platform admin bypasses module gating
     if (!MODULES.includes(moduleName)) return next()
-    const companyDoc = await db.collection('companies').doc(req.auth.companyId).get()
-    const modules = companyDoc.data()?.enabledModules || MODULES // missing = pre-existing company, treat as full access
+    const modules = req.company?.enabledModules || MODULES // missing = pre-existing company, treat as full access
     if (!modules.includes(moduleName)) {
       return res.status(403).json({ error: `Module "${moduleName}" non activé pour ce compte.` })
     }

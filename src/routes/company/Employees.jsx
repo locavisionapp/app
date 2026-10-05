@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, KeyRound, Shield, User } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
-import { Field, Input } from '../../components/ui/Field'
+import { Field, Input, Select } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
 import { useAuth } from '../../lib/AuthContext'
+import { useToast } from '../../components/ui/Toast'
 import { api } from '../../lib/api'
 
 export default function Employees() {
   const { profile } = useAuth()
+  const toast = useToast()
   const isAdmin = profile?.role === 'company_admin'
   const [employees, setEmployees] = useState(null)
   const [showForm, setShowForm] = useState(false)
@@ -17,7 +19,10 @@ export default function Employees() {
   const [revealed, setRevealed] = useState(null) // { username, password } shown once
 
   function refresh() {
-    api.listEmployees().then(setEmployees).catch(() => setEmployees([]))
+    api.listEmployees().then(setEmployees).catch((e) => {
+      setEmployees([])
+      toast.error(e)
+    })
   }
 
   useEffect(refresh, [])
@@ -31,31 +36,49 @@ export default function Employees() {
       setForm({ username: '', password: '', role: 'employee' })
       setShowForm(false)
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setCreating(false)
     }
   }
 
+  // Wraps a row action: refresh on success, toast on failure.
+  async function act(fn, successMessage) {
+    try {
+      await fn()
+      if (successMessage) toast.success(successMessage)
+      refresh()
+    } catch (e) {
+      toast.error(e)
+    }
+  }
+
   async function toggleRole(emp) {
     const role = emp.role === 'company_admin' ? 'employee' : 'company_admin'
-    await api.updateEmployee(emp.uid, { role })
-    refresh()
+    const label = role === 'company_admin' ? 'administrateur' : 'employé'
+    if (!window.confirm(`Passer "${emp.username}" en ${label} ?`)) return
+    await act(() => api.updateEmployee(emp.uid, { role }), 'Rôle mis à jour.')
   }
 
   async function toggleActive(emp) {
-    await api.updateEmployee(emp.uid, { active: !emp.active })
-    refresh()
+    const active = emp.active === false
+    await act(() => api.updateEmployee(emp.uid, { active }), active ? 'Accès réactivé.' : 'Accès désactivé.')
   }
 
   async function resetPassword(emp) {
-    const { password } = await api.resetEmployeePassword(emp.uid)
-    setRevealed({ username: emp.username, password })
+    if (!window.confirm(`Générer un nouveau mot de passe pour "${emp.username}" ? L'ancien ne fonctionnera plus.`)) return
+    try {
+      const { password } = await api.resetEmployeePassword(emp.uid)
+      setRevealed({ username: emp.username, password })
+    } catch (e) {
+      toast.error(e)
+    }
   }
 
   async function remove(emp) {
     if (!window.confirm(`Supprimer l'accès de "${emp.username}" ?`)) return
-    await api.deleteEmployee(emp.uid)
-    refresh()
+    await act(() => api.deleteEmployee(emp.uid), 'Accès supprimé.')
   }
 
   if (!employees) return <FullscreenSpinner />
@@ -82,16 +105,24 @@ export default function Employees() {
       {showForm && (
         <Card as="form" onSubmit={handleCreate} className="space-y-4 p-4">
           <Field label="Nom d'utilisateur">
-            <Input required value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+            <Input
+              required
+              pattern="[a-zA-Z0-9._\-]{3,30}"
+              title="3 à 30 caractères : lettres, chiffres, point, tiret, tiret bas"
+              autoCapitalize="none"
+              autoCorrect="off"
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
+            />
           </Field>
           <Field label="Mot de passe (8 caractères min.)">
-            <Input type="text" required minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            <Input type="text" required minLength={8} autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </Field>
           <Field label="Rôle">
-            <select className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               <option value="employee">Employé</option>
               <option value="company_admin">Administrateur</option>
-            </select>
+            </Select>
           </Field>
           <Button type="submit" disabled={creating}>
             {creating ? <Spinner size={16} className="text-white" /> : "Créer l'accès"}

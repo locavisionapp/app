@@ -28,3 +28,7 @@ test_key.js
 
 .vercel
 .env*
+
+# Local notes containing credentials
+email.txt
+firestore-debug.log

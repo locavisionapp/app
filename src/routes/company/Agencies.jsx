@@ -4,16 +4,24 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Field'
 import { FullscreenSpinner, Spinner } from '../../components/ui/Spinner'
+import { useToast } from '../../components/ui/Toast'
+import { useAuth } from '../../lib/AuthContext'
 import { api } from '../../lib/api'
 
 export default function Agencies() {
+  const toast = useToast()
+  const { profile } = useAuth()
+  const isAdmin = profile?.role === 'company_admin'
   const [agencies, setAgencies] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', city: '', address: '' })
   const [saving, setSaving] = useState(false)
 
   function refresh() {
-    api.listAgencies().then(setAgencies).catch(() => setAgencies([]))
+    api.listAgencies().then(setAgencies).catch((e) => {
+      setAgencies([])
+      toast.error(e)
+    })
   }
 
   useEffect(refresh, [])
@@ -25,16 +33,24 @@ export default function Agencies() {
       await api.createAgency(form)
       setForm({ name: '', city: '', address: '' })
       setShowForm(false)
+      toast.success('Agence créée.')
       refresh()
+    } catch (e) {
+      toast.error(e)
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Supprimer cette agence ? Les véhicules qui lui sont rattachés resteront dans la flotte.')) return
-    await api.deleteAgency(id)
-    refresh()
+    if (!window.confirm('Supprimer cette agence ? Les véhicules qui lui sont rattachés resteront dans la flotte, sans agence.')) return
+    try {
+      await api.deleteAgency(id)
+      toast.success('Agence supprimée.')
+      refresh()
+    } catch (e) {
+      toast.error(e)
+    }
   }
 
   if (!agencies) return <FullscreenSpinner />
@@ -43,21 +59,23 @@ export default function Agencies() {
     <div className="mx-auto max-w-2xl space-y-4 p-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-900">Agences</h1>
-        <Button size="sm" onClick={() => setShowForm(!showForm)}>
-          <Plus size={16} /> Nouvelle agence
-        </Button>
+        {isAdmin && (
+          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+            <Plus size={16} /> Nouvelle agence
+          </Button>
+        )}
       </div>
 
       {showForm && (
         <Card as="form" onSubmit={handleCreate} className="space-y-4 p-4">
           <Field label="Nom de l'agence">
-            <Input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex : Paris Centre" />
+            <Input required maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ex : Paris Centre" />
           </Field>
           <Field label="Ville">
-            <Input required value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+            <Input required maxLength={120} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
           </Field>
           <Field label="Adresse (optionnel)">
-            <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            <Input maxLength={240} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </Field>
           <Button type="submit" disabled={saving}>
             {saving ? <Spinner size={16} className="text-white" /> : "Créer l'agence"}
@@ -82,9 +100,11 @@ export default function Agencies() {
                   <p className="text-sm text-slate-500">{a.city}{a.address ? ` · ${a.address}` : ''}</p>
                 </div>
               </div>
-              <button onClick={() => handleDelete(a.id)} className="text-slate-400 hover:text-status-bad">
-                <Trash2 size={18} />
-              </button>
+              {isAdmin && (
+                <button onClick={() => handleDelete(a.id)} className="p-2 text-slate-400 hover:text-status-bad" aria-label={`Supprimer ${a.name}`}>
+                  <Trash2 size={18} />
+                </button>
+              )}
             </Card>
           ))}
         </div>

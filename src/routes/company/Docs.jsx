@@ -6,7 +6,9 @@ const SECTIONS = [
     items: [
       { q: 'Scanner un véhicule', a: "Onglet Scanner → photographiez la plaque → l'IA identifie le véhicule (marque, modèle, fiche technique) → confirmez ou complétez à la main → suivez le parcours guidé photo par photo → indiquez le kilométrage → l'analyse IA vous donne un état vert/orange/rouge avec le détail des dégâts." },
       { q: 'Organiser la flotte par agence', a: "Onglet Agences → créez une agence par ville/site. Chaque véhicule peut ensuite être rattaché à une agence depuis sa fiche, ce qui active les filtres par agence/ville dans Ma flotte." },
-      { q: 'Gérer les accès de votre équipe', a: "Onglet Employés (réservé aux administrateurs) → créez un identifiant par collaborateur, avec le rôle Employé (usage courant) ou Administrateur (gestion complète, y compris la facturation et les accès)." },
+      { q: 'Gérer les accès de votre équipe', a: "Onglet Employés (réservé aux administrateurs) → créez un identifiant par collaborateur, avec le rôle Employé (scan, inspections, suivi de flotte) ou Administrateur (en plus : agences, suppression de véhicules, accès, clé API et webhooks)." },
+      { q: 'Inspecter sans réseau (parking souterrain…)', a: "Prenez vos photos normalement : si le réseau coupe, l'inspection est enregistrée sur le téléphone et envoyée automatiquement dès le retour de la connexion. Un bandeau orange indique les inspections en attente. Pour un véhicule déjà connu, lancez l'inspection depuis sa fiche : l'identification de plaque (qui nécessite le réseau) n'est alors pas nécessaire." },
+      { q: 'Reprendre une photo ratée', a: "Après la dernière photo, un écran récapitulatif affiche toutes les prises ; les photos signalées comme mal cadrées portent un pictogramme orange. Touchez une photo pour la reprendre avant de lancer l'analyse." },
     ],
   },
   {
@@ -14,6 +16,8 @@ const SECTIONS = [
     items: [
       { q: "Utiliser l'API depuis votre CRM", a: "Onglet Mon compte → récupérez votre clé API (Authorization: Bearer sk_live_...). L'API publique /v1/... est la même que celle utilisée par cette application web — tout ce que vous faites ici est possible par API." },
       { q: 'Recevoir les événements en temps réel', a: "Onglet Mon compte → configurez une URL de webhook (HTTPS). LocaVision y envoie un POST signé (en-tête X-LocaVision-Signature, HMAC-SHA256 avec votre secret) à chaque véhicule créé/supprimé et à chaque inspection terminée — pratique pour synchroniser votre CRM sans avoir à interroger l'API en continu." },
+      { q: 'Lister la flotte (pagination)', a: "GET /v1/vehicles renvoie les véhicules du plus récent au plus ancien, 50 par page (paramètre limit, 200 max). Filtres : agencyId, city, category, status, q (recherche libre). S'il reste des résultats, l'en-tête de réponse X-Next-Cursor contient un curseur à repasser en paramètre cursor pour obtenir la page suivante. Même principe pour GET /v1/vehicles/{id}/inspections (20 par page)." },
+      { q: 'Créer une inspection par API', a: "1) Générez un identifiant unique (UUID) pour l'inspection. 2) Envoyez chaque photo séparément : POST /v1/vehicles/{id}/inspections/{inspectionId}/photos avec { stepId, image } (JPEG base64, 3 Mo max par photo). 3) Lancez l'analyse : POST /v1/vehicles/{id}/inspections avec { inspectionId, steps: [stepId…], mileage }. Cet appel est idempotent : le rejouer avec le même inspectionId renvoie l'inspection existante sans la refacturer. Les URLs de photos renvoyées sont signées et temporaires (1 h ; 7 jours dans les webhooks)." },
       { q: 'Vérifier une signature de webhook', a: "Calculez HMAC-SHA256(corps_brut_de_la_requete, votre_secret) et comparez au header X-LocaVision-Signature. Rejetez la requête si les deux ne correspondent pas." },
     ],
   },

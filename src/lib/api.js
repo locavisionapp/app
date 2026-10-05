@@ -5,11 +5,23 @@ import { auth } from './firebase'
 // the API function).
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
+const DEFAULT_TIMEOUT_MS = 30000
+
 class ApiError extends Error {
   constructor(message, status, payload) {
     super(message)
     this.status = status
     this.payload = payload
+  }
+
+  /** No response at all (offline, DNS, timeout): worth retrying later, nothing was rejected. */
+  get isNetworkError() {
+    return this.status === 0
+  }
+
+  /** Server-side hiccup or throttling: retryable as-is. 4xx are final for the same request. */
+  get isRetryable() {
+    return this.status === 0 || this.status === 408 || this.status === 429 || this.status >= 500
   }
 }
 
@@ -20,25 +32,53 @@ async function authHeader() {
   return { Authorization: `Bearer ${token}` }
 }
 
-export async function apiFetch(path, { method = 'GET', body, headers } = {}) {
-  const isFormLike = body instanceof FormData
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: {
-      ...(isFormLike ? {} : { 'Content-Type': 'application/json' }),
-      ...(await authHeader()),
-      ...headers,
-    },
-    body: body ? (isFormLike ? body : JSON.stringify(body)) : undefined,
-  })
+async function request(path, { method = 'GET', body, headers, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let res
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(await authHeader()),
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (e) {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    throw new ApiError(
+      offline
+        ? 'Pas de connexion internet.'
+        : e.name === 'AbortError'
+          ? 'Le serveur met trop de temps à répondre. Réessayez.'
+          : 'Impossible de joindre le serveur. Vérifiez votre connexion.',
+      0
+    )
+  } finally {
+    clearTimeout(timer)
+  }
 
   const contentType = res.headers.get('content-type') || ''
   const data = contentType.includes('application/json') ? await res.json().catch(() => null) : null
 
   if (!res.ok) {
-    throw new ApiError(data?.error || `Erreur API (${res.status})`, res.status, data)
+    const fallback = res.status === 413 ? 'Envoi trop volumineux.' : `Erreur serveur (${res.status}). Réessayez.`
+    throw new ApiError(data?.error || fallback, res.status, data)
   }
-  return data
+  return { data, headers: res.headers }
+}
+
+export async function apiFetch(path, options) {
+  return (await request(path, options)).data
+}
+
+/** Paginated list endpoints: body is the page, X-Next-Cursor (if any) points at the next one. */
+async function apiFetchPage(path, options) {
+  const { data, headers } = await request(path, options)
+  return { items: data || [], nextCursor: headers.get('X-Next-Cursor') }
 }
 
 function toQueryString(params) {
@@ -48,21 +88,28 @@ function toQueryString(params) {
 }
 
 export const api = {
-  me: () => apiFetch('/v1/me'),
+  me: () => apiFetch('/v1/me', { timeoutMs: 15000 }),
 
-  scanPlate: (imageBase64) => apiFetch('/v1/scan-plate', { method: 'POST', body: { image: imageBase64 } }),
+  // The plate pipeline chains OCR -> registry lookup -> AI fallback.
+  scanPlate: (imageBase64) => apiFetch('/v1/scan-plate', { method: 'POST', body: { image: imageBase64 }, timeoutMs: 65000 }),
 
-  listVehicles: (filters = {}) => apiFetch(`/v1/vehicles${toQueryString(filters)}`),
-  createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle }),
+  listVehicles: (filters = {}) => apiFetchPage(`/v1/vehicles${toQueryString(filters)}`),
+  createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle, timeoutMs: 45000 }),
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
   deleteVehicle: (id) => apiFetch(`/v1/vehicles/${id}`, { method: 'DELETE' }),
   updateVehiclePricing: (id, pricing) => apiFetch(`/v1/vehicles/${id}/pricing`, { method: 'PUT', body: pricing }),
   updateVehicleAgency: (id, agencyId) => apiFetch(`/v1/vehicles/${id}/agency`, { method: 'PUT', body: { agencyId } }),
   updateVehicleMileage: (id, mileage) => apiFetch(`/v1/vehicles/${id}/mileage`, { method: 'PUT', body: { mileage } }),
 
-  listInspections: (vehicleId) => apiFetch(`/v1/vehicles/${vehicleId}/inspections`),
-  validateCaptureStep: (vehicleId, payload) => apiFetch(`/v1/vehicles/${vehicleId}/inspections/validate-step`, { method: 'POST', body: payload }),
-  submitInspection: (vehicleId, payload) => apiFetch(`/v1/vehicles/${vehicleId}/inspections`, { method: 'POST', body: payload }),
+  listInspections: (vehicleId, params = {}) => apiFetchPage(`/v1/vehicles/${vehicleId}/inspections${toQueryString(params)}`),
+  getInspection: (vehicleId, inspectionId) => apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}`),
+  // One photo per request (stays far below the serverless body limit);
+  // `validate` runs the AI framing check on the same upload.
+  uploadInspectionPhoto: (vehicleId, inspectionId, payload) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/photos`, { method: 'POST', body: payload, timeoutMs: 45000 }),
+  // Runs the AI analysis on already-uploaded photos. Idempotent on inspectionId.
+  submitInspection: (vehicleId, payload) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections`, { method: 'POST', body: payload, timeoutMs: 75000 }),
 
   // Company agencies (branches/locations)
   listAgencies: () => apiFetch('/v1/agencies'),
@@ -89,7 +136,7 @@ export const api = {
   updateCompanyStatus: (id, status) => apiFetch(`/v1/companies/${id}/status`, { method: 'PUT', body: { status } }),
   updateCompanyModules: (id, enabledModules) => apiFetch(`/v1/companies/${id}/modules`, { method: 'PUT', body: { enabledModules } }),
   regenerateCompanyApiKey: (id) => apiFetch(`/v1/companies/${id}/regenerate-key`, { method: 'POST' }),
-  deleteCompany: (id) => apiFetch(`/v1/companies/${id}`, { method: 'DELETE' }),
+  deleteCompany: (id) => apiFetch(`/v1/companies/${id}`, { method: 'DELETE', timeoutMs: 60000 }),
   listCompanyQuotes: (id) => apiFetch(`/v1/companies/${id}/quotes`),
   createCompanyQuote: (id, quote) => apiFetch(`/v1/companies/${id}/quotes`, { method: 'POST', body: quote }),
   markQuotePaid: (id, quoteId, payment) => apiFetch(`/v1/companies/${id}/quotes/${quoteId}/mark-paid`, { method: 'PUT', body: payment }),

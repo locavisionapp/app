@@ -3,6 +3,8 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { cn } from '../lib/cn'
+import { listQueued } from '../lib/inspectionQueue'
+import { SyncBanner } from '../components/scan/SyncBanner'
 
 const ADMIN_NAV = [
   { to: '/admin/companies', label: 'Entreprises', icon: Building2 },
@@ -22,8 +24,16 @@ function companyNav(enabledModules) {
 }
 
 export default function AppLayout() {
-  const { profile, logout } = useAuth()
+  const { profile, logout: signOut } = useAuth()
   const navigate = useNavigate()
+
+  // Inspections still on the device belong to this user's session: warn
+  // before signing out, since nobody else can send them.
+  async function logout() {
+    const queued = await listQueued()
+    if (queued.length && !window.confirm(`${queued.length} inspection(s) n'ont pas encore été envoyées. Elles resteront sur cet appareil et partiront à votre prochaine connexion. Se déconnecter quand même ?`)) return
+    await signOut()
+  }
   const isAdmin = profile?.role === 'platform_admin'
   const nav = isAdmin ? ADMIN_NAV : companyNav(profile?.enabledModules)
   const primaryMobileNav = isAdmin ? nav : nav.filter((i) => i.primary)
@@ -48,7 +58,8 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 pb-20 md:pb-0">
+      <main className="min-w-0 flex-1 pb-20 md:pb-0">
+        {!isAdmin && <SyncBanner />}
         <Outlet />
       </main>
 

@@ -33,9 +33,15 @@ branchez tout ça à votre propre CRM via une API publique.
 - **Données** : Firestore (`companies/{id}/agencies/{id}`, `companies/{id}/vehicles/{id}/
   inspections/{id}`), Storage pour les photos. Les règles Firestore/Storage bloquent tout
   accès direct depuis un client — seul l'Admin SDK (utilisé par l'API) y accède.
-- **Fiabilité & sécurité** : en-têtes de sécurité (helmet), limitation de débit par IP,
-  validation des entrées sur chaque route, gestion d'erreurs centralisée qui ne renvoie
-  jamais de détail interne au client, timeouts sur tous les appels IA/tiers.
+- **Fiabilité & sécurité** : en-têtes de sécurité (helmet + `vercel.json`), limitation de
+  débit par IP client réelle, validation des entrées sur chaque route, gestion d'erreurs
+  centralisée qui ne renvoie jamais de détail interne au client, timeouts et budget de
+  temps global sur tous les appels IA/tiers, photos privées (URLs signées), suppression
+  des photos avec le véhicule/l'entreprise (RGPD), webhooks protégés contre le SSRF.
+- **Hors ligne** : PWA installable qui s'ouvre sans réseau ; les inspections faites sans
+  connexion sont conservées sur l'appareil et envoyées automatiquement au retour du réseau.
+- **Rôles** : `employee` (scan, inspections, flotte) / `company_admin` (en plus : agences,
+  suppression de véhicules, accès, clé API, webhooks) / `platform_admin` (LocaVision).
 
 ### Un seul back-end, plusieurs clients (API-first)
 
@@ -100,6 +106,34 @@ payant requis) ; Firestore/Storage/Auth restent sur **Firebase**. `vercel.json` 
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Contenu JSON complet d'une clé de compte de service (Firebase Console → Paramètres du projet → Comptes de service) |
 | `FIREBASE_STORAGE_BUCKET` | Même valeur que `VITE_FIREBASE_STORAGE_BUCKET` |
 | `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` | Clés tierces (jamais préfixées `VITE_`, jamais exposées au client) |
+
+**Région & limites** (`vercel.json`) : la fonction API tourne à **Paris (`cdg1`)**, avec
+60 s max par requête (l'analyse IA de 16 photos peut prendre ~30 s). Pour que la promesse
+« données en UE » soit vraie de bout en bout, vérifiez que la base Firestore et le bucket
+Storage sont aussi en Europe (Console Firebase → Firestore → onglet *Données*, l'emplacement
+est affiché en haut ; `eur3` ou `europe-west*` = OK). L'emplacement d'une base Firestore ne
+peut pas être changé après coup : si elle est aux États-Unis (`nam5`, `us-*`), il faut
+créer une nouvelle base en Europe et y migrer les données.
+
+**Index Firestore** (filtres de la flotte paginés côté serveur) — à déployer une fois, et
+à chaque modification de `firestore.indexes.json` :
+
+```bash
+firebase deploy --only firestore:indexes,storage --project locavision-13692
+```
+
+Tant qu'ils ne sont pas construits, l'API retombe automatiquement sur un filtrage en
+mémoire (plus lent, mais sans erreur).
+
+**Photos d'inspection** : stockées en privé, servies via des URLs signées temporaires.
+La signature utilise la clé `FIREBASE_SERVICE_ACCOUNT_KEY` (Vercel). Sur Firebase Cloud
+Functions, le compte de service doit avoir le rôle *Service Account Token Creator*.
+
+**Envoi des photos** : chaque photo est réduite à 1600 px / JPEG 80 % sur le téléphone
+(~150-400 Ko) et envoyée seule, dès la prise de vue — aucune requête ne s'approche de la
+limite de 4,5 Mo de Vercel. Sans réseau, l'inspection est conservée sur l'appareil
+(IndexedDB) et renvoyée automatiquement (`src/lib/inspectionQueue.js`) ; côté serveur, la
+soumission est idempotente sur l'identifiant d'inspection, donc jamais analysée deux fois.
 
 Désactivez aussi la **Deployment Protection** (Vercel SSO) dans les réglages du projet si
 le site doit être accessible sans authentification Vercel.
