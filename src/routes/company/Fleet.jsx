@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, ChevronRight, Search, X, RotateCcw } from 'lucide-react'
+import { Plus, ChevronRight, Search, X, RotateCcw, Download } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Field'
@@ -8,7 +8,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge'
 import { Spinner } from '../../components/ui/Spinner'
 import { useToast } from '../../components/ui/Toast'
 import { VEHICLE_CATEGORIES, getCategoryLabel } from '../../config/vehicleCategories'
-import { api } from '../../lib/api'
+import { api, saveBlob } from '../../lib/api'
 
 const EMPTY_FILTERS = { q: '', agencyId: '', city: '', category: '', status: '' }
 const PAGE_SIZE = 50
@@ -59,6 +59,20 @@ export default function Fleet() {
       toast.error(e)
     } finally {
       setLoadingMore(false)
+    }
+  }
+
+  const [exporting, setExporting] = useState(null)
+
+  async function exportCsv(kind) {
+    setExporting(kind)
+    try {
+      const blob = kind === 'fleet' ? await api.exportFleetCsv() : await api.exportDamagesCsv()
+      saveBlob(blob, `${kind === 'fleet' ? 'flotte' : 'defauts'}_${new Date().toISOString().slice(0, 10)}.csv`)
+    } catch (e) {
+      toast.error(e)
+    } finally {
+      setExporting(null)
     }
   }
 
@@ -125,6 +139,15 @@ export default function Fleet() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-3 text-xs">
+        <button type="button" onClick={() => exportCsv('fleet')} disabled={!!exporting} className="flex items-center gap-1 text-slate-500 hover:text-brand-700 disabled:opacity-50">
+          {exporting === 'fleet' ? <Spinner size={12} /> : <Download size={12} />} Exporter la flotte (CSV)
+        </button>
+        <button type="button" onClick={() => exportCsv('damages')} disabled={!!exporting} className="flex items-center gap-1 text-slate-500 hover:text-brand-700 disabled:opacity-50">
+          {exporting === 'damages' ? <Spinner size={12} /> : <Download size={12} />} Exporter les défauts (CSV)
+        </button>
+      </div>
+
       {loading ? (
         <div className="flex justify-center py-10"><Spinner /></div>
       ) : error ? (
@@ -155,6 +178,9 @@ export default function Fleet() {
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {v.pendingReviewCount > 0 && (
+                    <span className="rounded-full bg-status-warnBg px-2 py-0.5 text-[11px] font-medium text-status-warn">À valider</span>
+                  )}
                   {v.lastStatus ? <StatusBadge status={v.lastStatus} /> : <span className="text-xs text-slate-400">Jamais inspecté</span>}
                   <ChevronRight className="text-slate-400" size={18} />
                 </div>

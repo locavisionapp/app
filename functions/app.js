@@ -4,9 +4,11 @@ const helmet = require('helmet')
 const rateLimit = require('express-rate-limit')
 const { authenticate } = require('./lib/auth')
 const { logUsage } = require('./lib/usage')
+const { auditLog } = require('./lib/audit')
 const { asyncRoute } = require('./lib/asyncRoute')
 const { MODULES } = require('./lib/config')
 const { readSignedPhoto } = require('./lib/storage')
+const { emailEnabled } = require('./lib/email')
 
 const vehiclesRoutes = require('./routes/vehicles')
 const companiesRoutes = require('./routes/companies')
@@ -60,7 +62,7 @@ app.get(
 )
 
 const v1 = express.Router()
-v1.use(limiter, authenticate, logUsage)
+v1.use(limiter, authenticate, logUsage, auditLog)
 
 v1.get(
   '/me',
@@ -72,9 +74,11 @@ v1.get(
       companyId,
       companyName: company?.name || null,
       uid,
+      username: req.auth.username || null,
       enabledModules: company ? company.enabledModules || MODULES : null,
       companyStatus: company?.status || null,
       trialEndsAt: company?.trialEndsAt || null,
+      features: { email: emailEnabled() },
     })
   })
 )

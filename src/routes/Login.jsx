@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
 import { ScanLine, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { Card } from '../components/ui/Card'
@@ -107,6 +107,10 @@ export default function Login() {
 
           <p className="mt-4 text-center text-xs text-slate-400">
             Pas encore de compte entreprise ? Contactez l'équipe LocaVision pour l'ouverture de votre accès.
+          </p>
+          <p className="mt-2 text-center text-xs text-slate-400">
+            <Link to="/legal/cgv" className="hover:text-slate-600">CGU / CGV</Link> ·{' '}
+            <Link to="/legal/confidentialite" className="hover:text-slate-600">Confidentialité</Link>
           </p>
         </Card>
       </div>

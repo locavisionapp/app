@@ -15,6 +15,9 @@ const {
 } = require('../lib/storage')
 const { getCategoryLabel } = require('../lib/categories')
 const { dispatchWebhook } = require('../lib/webhooks')
+const { buildInspectionReport, PURPOSE_LABELS } = require('../lib/report')
+const { fetchWithTimeout } = require('../lib/fetchWithTimeout')
+const { sendEmail, emailEnabled } = require('../lib/email')
 
 const router = express.Router()
 const companyRole = requireRole('company_admin', 'employee')
@@ -88,9 +91,13 @@ async function getVehicleOr404(companyId, vehicleId) {
  * change stored public URLs in `photos`, passed through unchanged.
  */
 async function serializeInspection(req, id, data, ttlMs) {
-  const { photoPaths, photos, ...rest } = data
+  const { photoPaths, photos, signatures, ...rest } = data
   const urls = await toPhotoUrls(photoPaths || photos || [], { ttlMs, baseUrl: `${req.protocol}://${req.get('host')}` })
-  return { id, ...rest, photos: urls, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
+  // Signature images only go into the PDF report; the API exposes who signed and when.
+  const signed = Object.fromEntries(
+    Object.entries(signatures || {}).map(([role, sig]) => [role, { name: sig.name, email: sig.email || null, signedAt: sig.signedAt }])
+  )
+  return { id, ...rest, signatures: signed, photos: urls, status_label: rest.statusLabel ?? null, health_score: rest.healthScore ?? null }
 }
 
 // The AI request carries every photo inline; keep it well under Gemini's
@@ -344,6 +351,71 @@ router.post(
     const ref = await col.add(vehicle)
     dispatchWebhook(req.auth.companyId, 'vehicle.created', { id: ref.id, ...vehicle })
     res.status(201).json({ id: ref.id, ...vehicle })
+  })
+)
+
+// ---- CSV exports (Excel-friendly: ';' separator, UTF-8 BOM, French dates) ----
+
+function csvCell(value) {
+  if (value == null) return ''
+  const s = String(value)
+  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function toCsv(header, rows) {
+  return '\uFEFF' + [header, ...rows].map((r) => r.map(csvCell).join(';')).join('\r\n')
+}
+
+function csvDate(ms) {
+  return ms ? new Date(ms).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }) : ''
+}
+
+async function allVehicles(companyId) {
+  const snap = await vehiclesCol(companyId).orderBy('createdAt', 'desc').limit(5000).get()
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+function sendCsv(res, name, csv) {
+  res.set('Content-Type', 'text/csv; charset=utf-8')
+  res.set('Content-Disposition', `attachment; filename="${name}_${new Date().toISOString().slice(0, 10)}.csv"`)
+  res.send(csv)
+}
+
+const STATUS_FR = { green: 'Bon état', orange: 'À surveiller', red: 'Dégâts détectés' }
+
+router.get(
+  '/vehicles/export.csv',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    const vehicles = await allVehicles(req.auth.companyId)
+    const rows = vehicles.map((v) => [
+      v.licensePlate, v.brand, v.model, v.year, v.category, v.fuel, v.vin, v.city,
+      v.mileage, v.pricing?.dailyRate, STATUS_FR[v.lastStatus] || '', csvDate(v.lastInspectionAt),
+      (v.knownDamages || []).filter((d) => d.status === 'open').length, v.pendingReviewCount || 0, csvDate(v.createdAt),
+    ])
+    sendCsv(res, 'flotte', toCsv(
+      ['Plaque', 'Marque', 'Modèle', 'Année', 'Type', 'Carburant', 'VIN', 'Ville', 'Kilométrage', 'Tarif/jour (EUR)', 'Dernier état', 'Dernière inspection', 'Défauts ouverts', 'Inspections à valider', 'Ajouté le'],
+      rows
+    ))
+  })
+)
+
+router.get(
+  '/damages/export.csv',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    const vehicles = await allVehicles(req.auth.companyId)
+    const statusFr = { open: 'Ouvert', repaired: 'Réparé', dismissed: 'Écarté' }
+    const rows = []
+    for (const v of vehicles) {
+      for (const d of v.knownDamages || []) {
+        if (d.status === 'dismissed' && req.query.all !== '1') continue
+        rows.push([v.licensePlate, `${v.brand || ''} ${v.model || ''}`.trim(), d.location, d.type, d.severity, d.description, statusFr[d.status] || d.status, csvDate(d.firstSeenAt), csvDate(d.lastSeenAt), csvDate(d.repairedAt)])
+      }
+    }
+    sendCsv(res, 'defauts', toCsv(['Plaque', 'Véhicule', 'Zone', 'Type', 'Gravité (1-5)', 'Description', 'Statut', 'Relevé le', 'Vu pour la dernière fois', 'Réparé le'], rows))
   })
 )
 
@@ -801,6 +873,122 @@ router.put(
       t.update(vehicleRef, { knownDamages: known })
     })
     res.json(await serializeVehicle(req, await vehicleRef.get()))
+  })
+)
+
+const SIGNATURE_ROLES = ['customer', 'inspector']
+const MAX_SIGNATURE_BYTES = 200 * 1024
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+async function loadInspection(req) {
+  const { ref: vehicleRef, doc: vehicleDoc } = await getVehicleOr404(req.auth.companyId, req.params.id)
+  const inspectionDoc = await vehicleRef.collection('inspections').doc(req.params.inspectionId).get()
+  if (!inspectionDoc.exists) throw new ApiError(404, 'Inspection introuvable.')
+  return { vehicleRef, vehicle: vehicleDoc.data(), inspectionRef: inspectionDoc.ref, inspection: { id: inspectionDoc.id, ...inspectionDoc.data() } }
+}
+
+/** Builds the PDF report of an inspection (photos fetched server-side). */
+async function renderReport(req) {
+  const { vehicle, inspection } = await loadInspection(req)
+  let photos
+  if (inspection.photoPaths?.length) {
+    photos = (await downloadInspectionPhotos(inspection.photoPaths)).map((p) => ({ buffer: p.missing ? null : Buffer.from(p.image, 'base64') }))
+  } else {
+    // Inspections from before private storage: public URLs.
+    photos = await Promise.all(
+      (inspection.photos || []).map(async (url) => {
+        try {
+          const r = await fetchWithTimeout(url, {}, 8000)
+          return { buffer: r.ok ? Buffer.from(await r.arrayBuffer()) : null }
+        } catch {
+          return { buffer: null }
+        }
+      })
+    )
+  }
+  let inspectorName = inspection.source === 'api' ? 'API' : null
+  if (inspection.inspectorUid) {
+    const user = await db.collection('users').doc(inspection.inspectorUid).get()
+    inspectorName = user.data()?.username || user.data()?.email || null
+  }
+  const pdf = await buildInspectionReport({ company: req.company || {}, vehicle, inspection, inspectorName, photos })
+  const date = new Date(inspection.createdAt).toISOString().slice(0, 10)
+  return { pdf, vehicle, inspection, filename: `etat-des-lieux_${vehicle.licensePlate}_${date}.pdf` }
+}
+
+/** PDF report (état des lieux) of an inspection. */
+router.get(
+  '/vehicles/:id/inspections/:inspectionId/report.pdf',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    const { pdf, filename } = await renderReport(req)
+    res.set('Content-Type', 'application/pdf')
+    res.set('Content-Disposition', `inline; filename="${filename}"`)
+    res.set('Cache-Control', 'private, no-store')
+    res.send(pdf)
+  })
+)
+
+/**
+ * Signature of the inspection (contradictory état des lieux): `role` =
+ * customer | inspector, `name`, `image` (PNG data URL from the signature
+ * pad), optional `purpose` (checkout | checkin | control) and customer
+ * `email`. Defects must be validated first, and a signature can't be
+ * replaced once given — the signed document must not change afterwards.
+ */
+router.post(
+  '/vehicles/:id/inspections/:inspectionId/signatures',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    const role = String(req.body?.role || '')
+    const name = String(req.body?.name || '').trim().slice(0, 120)
+    const image = String(req.body?.image || '')
+    const email = String(req.body?.email || '').trim().toLowerCase()
+    const purpose = req.body?.purpose && PURPOSE_LABELS[req.body.purpose] ? req.body.purpose : null
+    if (!SIGNATURE_ROLES.includes(role)) throw new ApiError(400, 'Signataire invalide.')
+    if (name.length < 2) throw new ApiError(400, 'Nom du signataire requis.')
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image) || image.length * 0.75 > MAX_SIGNATURE_BYTES) throw new ApiError(400, 'Signature invalide.')
+    if (email && !EMAIL_PATTERN.test(email)) throw new ApiError(400, 'Email invalide.')
+
+    const { inspectionRef } = await loadInspection(req)
+    const updated = await db.runTransaction(async (t) => {
+      const snap = await t.get(inspectionRef)
+      const data = snap.data()
+      if (data.review?.status === 'pending') throw new ApiError(409, "Validez d'abord les défauts avant de faire signer.")
+      if (data.signatures?.[role]) throw new ApiError(409, role === 'customer' ? 'Le client a déjà signé cette inspection.' : "L'inspecteur a déjà signé cette inspection.")
+      const signature = { name, image, signedAt: Date.now(), byUid: req.auth.uid || null, ...(email ? { email } : {}) }
+      const patch = { [`signatures.${role}`]: signature, ...(purpose && !data.purpose ? { purpose } : {}) }
+      t.update(inspectionRef, patch)
+      return { ...data, purpose: data.purpose || purpose, signatures: { ...(data.signatures || {}), [role]: signature } }
+    })
+    dispatchWebhook(req.auth.companyId, 'inspection.signed', { vehicleId: req.params.id, inspectionId: req.params.inspectionId, role, name })
+    res.json(await serializeInspection(req, req.params.inspectionId, updated))
+  })
+)
+
+/** Emails the PDF report (e.g. to the customer after signing). Requires an email provider (see lib/email.js). */
+router.post(
+  '/vehicles/:id/inspections/:inspectionId/report/send',
+  companyRole,
+  fleetModule,
+  asyncRoute(async (req, res) => {
+    if (!emailEnabled()) throw new ApiError(501, "L'envoi d'emails n'est pas configuré. Téléchargez le PDF et envoyez-le vous-même.")
+    const to = String(req.body?.email || '').trim().toLowerCase()
+    if (!EMAIL_PATTERN.test(to)) throw new ApiError(400, 'Email invalide.')
+    const { pdf, vehicle, inspection, filename } = await renderReport(req)
+    const company = req.company?.name || 'LocaVision'
+    const title = PURPOSE_LABELS[inspection.purpose] || "Rapport d'inspection"
+    await sendEmail({
+      to,
+      subject: `${title} — ${vehicle.licensePlate} — ${company}`,
+      text: `Bonjour,\n\nVeuillez trouver ci-joint le document « ${title} » du véhicule ${vehicle.brand || ''} ${vehicle.model || ''} (${vehicle.licensePlate}), établi le ${new Date(inspection.createdAt).toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}.\n\nCordialement,\n${company}`,
+      attachments: [{ filename, content: pdf.toString('base64') }],
+    })
+    await vehiclesCol(req.auth.companyId).doc(req.params.id).collection('inspections').doc(req.params.inspectionId)
+      .update({ reportSentTo: FieldValue.arrayUnion({ email: to, at: Date.now() }) })
+    res.json({ sent: true, to })
   })
 )
 

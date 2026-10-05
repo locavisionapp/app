@@ -68,7 +68,7 @@ async function authenticate(req, res, next) {
     }
     const userDoc = await db.collection('users').doc(decoded.uid).get()
     if (!userDoc.exists) return res.status(403).json({ error: 'Utilisateur non provisionné.' })
-    const { role, companyId, active } = userDoc.data()
+    const { role, companyId, active, username, email } = userDoc.data()
     if (active === false) return res.status(403).json({ error: 'Ce compte a été désactivé.' })
 
     if (companyId) {
@@ -79,7 +79,7 @@ async function authenticate(req, res, next) {
       req.company = companyDoc.data()
     }
 
-    req.auth = { uid: decoded.uid, role, companyId: companyId || null, via: 'firebase' }
+    req.auth = { uid: decoded.uid, role, companyId: companyId || null, via: 'firebase', username: username || email || null }
     return next()
   } catch (e) {
     // Datastore outage etc. — a server error, not a bad credential: don't

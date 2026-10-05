@@ -10,7 +10,12 @@
  *   GCLOUD_PROJECT=<your-project-id> node functions/scripts/seed.js
  */
 const { db, auth } = require('../lib/db')
+const crypto = require('crypto')
 const { generateApiKey, hashApiKey } = require('../lib/auth')
+
+// Never a fixed password in the repo: SEED_PASSWORD if given, otherwise a
+// random one printed once at the end.
+const SEED_PASSWORD = process.env.SEED_PASSWORD || `${crypto.randomBytes(9).toString('base64url')}!`
 
 async function upsertUser(email, password, displayName) {
   try {
@@ -23,13 +28,13 @@ async function upsertUser(email, password, displayName) {
 async function seed() {
   // 1. Platform admin
   const adminEmail = 'admin@locavision.app'
-  const adminPassword = 'LocaVision2026!'
+  const adminPassword = SEED_PASSWORD
   const adminUser = await upsertUser(adminEmail, adminPassword, 'Admin LocaVision')
   await db.collection('users').doc(adminUser.uid).set({ email: adminEmail, role: 'platform_admin', companyId: null }, { merge: true })
 
   // 2. Demo company + its login + its API key
   const companyEmail = 'demo@locavision.app'
-  const companyPassword = 'LocaVision2026!'
+  const companyPassword = SEED_PASSWORD
   const existingCompany = await db.collection('companies').where('contactEmail', '==', companyEmail).limit(1).get()
 
   let companyId, apiKey

@@ -5,6 +5,7 @@ import { RequireAuth } from './routes/RequireAuth'
 import AppLayout from './routes/AppLayout'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
+import Legal from './routes/legal/Legal'
 import { FullscreenSpinner } from './components/ui/Spinner'
 import { ToastProvider } from './components/ui/Toast'
 
@@ -20,6 +21,7 @@ const Docs = lazy(() => import('./routes/company/Docs'))
 const Companies = lazy(() => import('./routes/admin/Companies'))
 const ApiUsage = lazy(() => import('./routes/admin/ApiUsage'))
 const Security = lazy(() => import('./routes/Security'))
+const Activity = lazy(() => import('./routes/company/Activity'))
 
 // Remount the scan flow on every navigation to /app/scan, so "Nouveau scan"
 // from the result screen (same URL) starts over instead of doing nothing.
@@ -37,6 +39,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/legal/:doc" element={<Legal />} />
 
               <Route
                 element={
@@ -54,6 +57,7 @@ export default function App() {
                 <Route path="/app/account" element={<Account />} />
                 <Route path="/app/docs" element={<Docs />} />
                 <Route path="/app/security" element={<Security />} />
+                <Route path="/app/activity" element={<Activity />} />
               </Route>
 
               <Route

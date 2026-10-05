@@ -13,6 +13,7 @@ import { getCategoryLabel } from '../../config/vehicleCategories'
 import { SPEC_GROUPS } from '../../config/vehicleSpecs'
 import { api } from '../../lib/api'
 import { DamageReview, DamagePhoto } from '../../components/scan/DamageReview'
+import { InspectionReport } from '../../components/scan/InspectionReport'
 
 const DATE_FORMAT = { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }
 
@@ -300,7 +301,7 @@ export default function VehicleDetail() {
         ) : (
           <div className="space-y-2">
             {inspections.map((insp) => (
-              <InspectionCard key={insp.id} inspection={insp} vehicleId={id} knownDamages={vehicle.knownDamages || []} onReviewed={onInspectionReviewed} />
+              <InspectionCard key={insp.id} inspection={insp} vehicle={vehicle} vehicleId={id} knownDamages={vehicle.knownDamages || []} onReviewed={onInspectionReviewed} />
             ))}
             {inspectionsCursor && (
               <Button variant="secondary" className="w-full" onClick={loadMoreInspections} disabled={loadingMore}>
@@ -314,7 +315,7 @@ export default function VehicleDetail() {
   )
 }
 
-function InspectionCard({ inspection: insp, vehicleId, knownDamages, onReviewed }) {
+function InspectionCard({ inspection: insp, vehicle, vehicleId, knownDamages, onReviewed }) {
   const pending = insp.review?.status === 'pending'
   const [open, setOpen] = useState(pending)
   const photos = (insp.photos || []).filter(Boolean)
@@ -344,6 +345,7 @@ function InspectionCard({ inspection: insp, vehicleId, knownDamages, onReviewed 
         <div className="space-y-3 border-t border-slate-100 p-4">
           {insp.summary && <p className="text-sm text-slate-600">{insp.summary}</p>}
           <DamageReview vehicleId={vehicleId} inspection={insp} knownDamages={knownDamages} onUpdated={onReviewed} />
+          {insp.mode && <InspectionReport vehicleId={vehicleId} vehicle={vehicle} inspection={insp} onUpdated={onReviewed} />}
           {photos.length > 0 && (
             <details>
               <summary className="cursor-pointer text-sm text-slate-500 hover:text-brand-700">Toutes les photos ({photos.length})</summary>

@@ -373,7 +373,7 @@ export default function Scan() {
   return (
     <div className="mx-auto max-w-md space-y-4 p-4">
       <h1 className="text-xl font-bold text-slate-900">Résultat de l'inspection</h1>
-      <ScanResult result={result} vehicleId={vehicle.id} />
+      <ScanResult result={result} vehicle={vehicle} vehicleId={vehicle.id} />
     </div>
   )
 }

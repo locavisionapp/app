@@ -5,11 +5,12 @@ import { Card } from '../ui/Card'
 import { statusMeta } from '../ui/StatusBadge'
 import { Button } from '../ui/Button'
 import { DamageReview } from './DamageReview'
+import { InspectionReport } from './InspectionReport'
 import { api } from '../../lib/api'
 
 const ICONS = { green: CheckCircle2, orange: AlertTriangle, red: XCircle }
 
-export function ScanResult({ result: initial, vehicleId }) {
+export function ScanResult({ result: initial, vehicle, vehicleId }) {
   const [result, setResult] = useState(initial)
   const [knownDamages, setKnownDamages] = useState([])
   const status = result.status || 'orange'
@@ -41,6 +42,8 @@ export function ScanResult({ result: initial, vehicleId }) {
       </Card>
 
       <DamageReview vehicleId={vehicleId} inspection={result} knownDamages={knownDamages} onUpdated={setResult} />
+
+      <InspectionReport vehicleId={vehicleId} vehicle={vehicle} inspection={result} onUpdated={setResult} />
 
       {!pending && (
         <div className="flex gap-3">

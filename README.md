@@ -88,8 +88,9 @@ GCLOUD_PROJECT=<votre-project-id> node scripts/seed.js
 ```
 
 Comptes créés : `admin@locavision.app` (platform_admin) et `demo@locavision.app`
-(company_admin), mot de passe `LocaVision2026!` pour les deux — à changer avant toute
-utilisation réelle.
+(company_admin). Le mot de passe est celui de la variable `SEED_PASSWORD`, ou un mot de
+passe aléatoire affiché une seule fois en fin de script. Aucun mot de passe n'est écrit
+dans le dépôt.
 
 ### Déploiement
 
@@ -106,6 +107,8 @@ payant requis) ; Firestore/Storage/Auth restent sur **Firebase**. `vercel.json` 
 | `FIREBASE_SERVICE_ACCOUNT_KEY` | Contenu JSON complet d'une clé de compte de service (Firebase Console → Paramètres du projet → Comptes de service) |
 | `FIREBASE_STORAGE_BUCKET` | Même valeur que `VITE_FIREBASE_STORAGE_BUCKET` |
 | `GEMINI_API_KEY`, `PLATE_RECOGNIZER_TOKEN`, `SIV_API_KEY` | Clés tierces (jamais préfixées `VITE_`, jamais exposées au client) |
+| `PHOTO_STORAGE` | `gcs` pour stocker les photos dans Firebase Storage (voir plus bas) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Optionnel — envoi des rapports PDF par email via [Resend](https://resend.com) (`EMAIL_FROM` = `LocaVision <rapports@votre-domaine>`, domaine vérifié chez Resend). Sans elles, le bouton email est masqué. |
 
 **Région & limites** (`vercel.json`) : la fonction API tourne à **Paris (`cdg1`)**, avec
 120 s max par requête (l'analyse IA en mode comparaison envoie jusqu'à ~80 photos). Pour que la promesse
@@ -137,6 +140,12 @@ Les URLs signées utilisent la clé `FIREBASE_SERVICE_ACCOUNT_KEY` (ou `PHOTO_UR
 définie). Sur Firebase Cloud Functions en mode `gcs`, le compte de service doit avoir le
 rôle *Service Account Token Creator*. Changer de mode ne déplace pas les photos déjà
 enregistrées.
+
+**Sauvegardes (à activer une fois, console Google Cloud)** : Firestore → base `(default)` →
+*Disaster recovery* : activer la **restauration à un instant donné (PITR, 7 jours)**, la
+**protection contre la suppression**, et une **sauvegarde planifiée quotidienne** (rétention
+conseillée : 14 semaines). Ajouter aussi une **règle TTL** sur le champ `expireAt` du groupe de
+collections `auditLog` (purge automatique du journal d'activité après un an).
 
 **Envoi des photos** : chaque photo est réduite à 1600 px / JPEG 80 % sur le téléphone
 (~150-400 Ko) et envoyée seule, dès la prise de vue — aucune requête ne s'approche de la

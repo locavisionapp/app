@@ -97,4 +97,29 @@ router.get(
   })
 )
 
+/** Activity log (admins), newest first, paginated with X-Next-Cursor; user names resolved. */
+router.get(
+  '/audit-log',
+  adminOnly,
+  asyncRoute(async (req, res) => {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 200)
+    const col = companyRef(req).collection('auditLog')
+    let query = col.orderBy('at', 'desc')
+    if (req.query.cursor) {
+      const cursorDoc = await col.doc(String(req.query.cursor)).get()
+      if (cursorDoc.exists) query = query.startAfter(cursorDoc)
+    }
+    const snap = await query.limit(limit + 1).get()
+    const docs = snap.docs.slice(0, limit)
+    const uids = [...new Set(docs.map((d) => d.data().uid).filter(Boolean))]
+    const users = uids.length ? await db.getAll(...uids.map((uid) => db.collection('users').doc(uid))) : []
+    const names = Object.fromEntries(users.filter((u) => u.exists).map((u) => [u.id, u.data().username || u.data().email]))
+    if (snap.docs.length > limit) res.set('X-Next-Cursor', docs[docs.length - 1].id)
+    res.json(docs.map((d) => {
+      const { expireAt, ...entry } = d.data()
+      return { id: d.id, ...entry, user: entry.via === 'apikey' ? 'Clé API' : names[entry.uid] || 'Compte supprimé' }
+    }))
+  })
+)
+
 module.exports = router

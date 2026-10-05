@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X, ShieldCheck } from 'lucide-react'
+import { ScanLine, Car, LogOut, Building2, BarChart3, MapPin, Users, UserCog, BookOpen, MoreHorizontal, X, ShieldCheck, History } from 'lucide-react'
 import { useAuth } from '../lib/AuthContext'
 import { cn } from '../lib/cn'
 import { listQueued } from '../lib/inspectionQueue'
@@ -12,7 +12,7 @@ const ADMIN_NAV = [
   { to: '/admin/security', label: 'Sécurité', icon: ShieldCheck },
 ]
 
-function companyNav(enabledModules) {
+function companyNav(enabledModules, isCompanyAdmin) {
   const modules = enabledModules || ['scan', 'fleet', 'agencies', 'api']
   return [
     { to: '/app/scan', label: 'Scanner', icon: ScanLine, primary: true, hidden: !modules.includes('scan') },
@@ -20,6 +20,7 @@ function companyNav(enabledModules) {
     { to: '/app/agencies', label: 'Agences', icon: MapPin, hidden: !modules.includes('agencies') },
     { to: '/app/employees', label: 'Employés', icon: Users },
     { to: '/app/account', label: 'Mon compte', icon: UserCog },
+    { to: '/app/activity', label: 'Activité', icon: History, hidden: !isCompanyAdmin },
     { to: '/app/security', label: 'Sécurité', icon: ShieldCheck },
     { to: '/app/docs', label: 'Documentation', icon: BookOpen },
   ].filter((item) => !item.hidden)
@@ -37,7 +38,7 @@ export default function AppLayout() {
     await signOut()
   }
   const isAdmin = profile?.role === 'platform_admin'
-  const nav = isAdmin ? ADMIN_NAV : companyNav(profile?.enabledModules)
+  const nav = isAdmin ? ADMIN_NAV : companyNav(profile?.enabledModules, profile?.role === 'company_admin')
   const primaryMobileNav = isAdmin ? nav : nav.filter((i) => i.primary)
   const secondaryNav = isAdmin ? [] : nav.filter((i) => !i.primary)
   const [showMore, setShowMore] = useState(false)

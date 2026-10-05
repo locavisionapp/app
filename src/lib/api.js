@@ -81,6 +81,37 @@ async function apiFetchPage(path, options) {
   return { items: data || [], nextCursor: headers.get('X-Next-Cursor') }
 }
 
+/** Authenticated binary download (PDF/CSV): returns a Blob. */
+export async function apiFetchBlob(path, { timeoutMs = 90000 } = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let res
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, { headers: await authHeader(), signal: controller.signal })
+  } catch (e) {
+    throw new ApiError(e.name === 'AbortError' ? 'Le serveur met trop de temps à répondre. Réessayez.' : 'Impossible de joindre le serveur. Vérifiez votre connexion.', 0)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new ApiError(data?.error || `Erreur serveur (${res.status}). Réessayez.`, res.status, data)
+  }
+  return res.blob()
+}
+
+/** Saves a Blob as a file on the device. */
+export function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
+}
+
 function toQueryString(params) {
   const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== ''))
   const s = q.toString()
@@ -96,7 +127,7 @@ export const api = {
   // Typed plate -> registry lookup (or the existing fleet vehicle).
   lookupPlate: (licensePlate) => apiFetch('/v1/lookup-plate', { method: 'POST', body: { licensePlate }, timeoutMs: 45000 }),
 
-  listVehicles:(filters = {}) => apiFetchPage(`/v1/vehicles${toQueryString(filters)}`),
+  listVehicles: (filters = {}) => apiFetchPage(`/v1/vehicles${toQueryString(filters)}`),
   createVehicle: (vehicle) => apiFetch('/v1/vehicles', { method: 'POST', body: vehicle, timeoutMs: 45000 }),
   getVehicle: (id) => apiFetch(`/v1/vehicles/${id}`),
   deleteVehicle: (id) => apiFetch(`/v1/vehicles/${id}`, { method: 'DELETE' }),
@@ -113,6 +144,14 @@ export const api = {
   // Human validation of the new defects: acceptedIds = confirmed real ones.
   reviewInspection: (vehicleId, inspectionId, acceptedIds) =>
     apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/review`, { method: 'POST', body: { acceptedIds } }),
+  signInspection: (vehicleId, inspectionId, signature) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/signatures`, { method: 'POST', body: signature }),
+  getReportPdf: (vehicleId, inspectionId) => apiFetchBlob(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/report.pdf`),
+  sendReport: (vehicleId, inspectionId, email) =>
+    apiFetch(`/v1/vehicles/${vehicleId}/inspections/${inspectionId}/report/send`, { method: 'POST', body: { email }, timeoutMs: 90000 }),
+  exportFleetCsv: () => apiFetchBlob('/v1/vehicles/export.csv'),
+  exportDamagesCsv: () => apiFetchBlob('/v1/damages/export.csv'),
+  getAuditLog: (params = {}) => apiFetchPage(`/v1/audit-log${toQueryString(params)}`),
   updateDamageStatus: (vehicleId, damageId, status) =>
     apiFetch(`/v1/vehicles/${vehicleId}/damages/${damageId}`, { method: 'PUT', body: { status } }),
   // Runs the AI analysis on already-uploaded photos. Idempotent on inspectionId.

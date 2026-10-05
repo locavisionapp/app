@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { LEGAL_LINKS } from './legal/Legal'
 import { ScanLine, ShieldCheck, Clock, Code2, CheckCircle2, ArrowRight, Car, Truck, Bike } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 
@@ -141,8 +142,13 @@ export default function Landing() {
         </Button>
       </section>
 
-      <footer className="py-8 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} LocaVision
+      <footer className="space-y-2 py-8 text-center text-xs text-slate-400">
+        <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+          {LEGAL_LINKS.map(([id, label]) => (
+            <Link key={id} to={`/legal/${id}`} className="hover:text-slate-600">{label}</Link>
+          ))}
+        </nav>
+        <p>© {new Date().getFullYear()} LocaVision</p>
       </footer>
     </div>
   )
